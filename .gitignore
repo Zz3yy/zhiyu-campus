@@ -1,0 +1,31 @@
+# Java / Spring Boot
+zhiyu-server/target/
+*.class
+
+# Node / React
+zhiyu-web/node_modules/
+zhiyu-web/node_modules.*/
+zhiyu-web/dist/
+zhiyu-web/test-results/
+zhiyu-web/playwright-report/
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
+# Local configuration and runtime data
+.env
+.env.*
+!.env.example
+*.local
+deploy/.env
+
+# IDE and OS files
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db

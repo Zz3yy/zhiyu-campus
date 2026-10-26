@@ -1,0 +1,22 @@
+spring:
+  application:
+    name: zhiyu-server
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:zhiyu}
+    username: ${POSTGRES_USER:zhiyu}
+    password: ${POSTGRES_PASSWORD:zhiyu_local_password}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+server:
+  port: ${SERVER_PORT:8080}
+ai:
+  service-url: ${AI_SERVICE_URL:http://localhost:8000}
+  doubao:
+    api-key: ${ARK_API_KEY:}
+    model: ${ARK_MODEL:}
+    base-url: ${ARK_BASE_URL:https://ark.cn-beijing.volces.com/api/v3}
