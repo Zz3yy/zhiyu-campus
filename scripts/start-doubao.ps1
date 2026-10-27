@@ -57,13 +57,10 @@ try {
         throw 'ARK_BASE_URL must be an absolute URL.'
     }
 
-    $mavenCommand = 'D:\Pro\maven\apache-maven-3.9.16\bin\mvn.cmd'
+    $mavenOnPath = Get-Command mvn.cmd -ErrorAction SilentlyContinue
+    $mavenCommand = if ($null -ne $mavenOnPath) { $mavenOnPath.Source } else { 'D:\Pro\maven\apache-maven-3.9.16\bin\mvn.cmd' }
     if (-not (Test-Path -LiteralPath $mavenCommand)) {
-        $mavenOnPath = Get-Command mvn.cmd -ErrorAction SilentlyContinue
-        if ($null -eq $mavenOnPath) {
-            throw 'Maven was not found. Install Maven or check D:\Pro\maven\apache-maven-3.9.16\bin\mvn.cmd.'
-        }
-        $mavenCommand = $mavenOnPath.Source
+        throw 'Maven was not found. Install Maven and add its bin directory to PATH.'
     }
 
     $javaHome = $env:JAVA_HOME

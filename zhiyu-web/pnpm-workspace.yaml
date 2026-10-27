@@ -1,3 +1,2 @@
 # pnpm 12 project settings; .npmrc is not used for these options.
 nodeLinker: hoisted
-storeDir: D:/Pro/pnpm-store

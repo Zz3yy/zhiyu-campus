@@ -1,114 +1,119 @@
 # 知愈校园 · 情绪花园
 
-面向大学生考试压力与复习启动的非诊断型支持 Web 应用。包含六种情绪植物、守园人物、播种、认知日记、微行动、成长、次日复盘和七天报告。树屋支持本地规则引导与可选豆包：先澄清，再提供一个小行动，用户确认后才创建任务。
+面向大学生考试压力和复习拖延的非诊断型支持 Web 应用。用花园和植物成长记录用户主动提供的情绪与行动，把“卡住了”转化为一个愿意开始的小步骤。
 
-参见 `docs/情绪花园交付记录-2026-10-15.md` 获取首轮实现范围。豆包配置见 `docs/豆包接入.md`；本轮流程、反馈规则、验证边界及演示步骤见 `docs/复习Agent闭环验收-2026-10-23.md`。配置齐全不等于真实模型调用成功，需检查每条回复的来源。
+仓库：<https://github.com/Zz3yy/zhiyu-campus> · 主维护者：Zz3（[@Zz3yy](https://github.com/Zz3yy)）
+
+## 核心体验
+
+1. 在树屋描述考试压力或复习卡点，Agent 先澄清需求。
+2. 推荐一个低门槛行动，展示时长、推荐理由和实际工具调用轨迹。
+3. 用户点击确认后才创建任务，并关联植物成长。
+4. 用户反馈完成、跳过、太难或无帮助，后续建议在授权范围内调整。
+
+保留六种情绪植物、守园人物、认知日记、次日复盘和七天报告。个性化仅使用用户主动提供的信息和行动反馈；不读取课表、私人聊天或设备数据，不做心理诊断。涉及自伤、伤人或紧急危险时暂停普通流程，展示固定求助提示；规则可能漏报或误报，不代表真人值守或危机干预服务。
+
+## AI 架构与实现边界
+
+React 前端通过 Spring Boot 使用方舟兼容的 Function Calling。豆包负责意图理解、工具选择与回应生成；本地约束层校验阶段、授权、参数、目录和风险，失败时明确降级为本地引导。推荐阶段要求调用工具；页面显示实际轨迹，不能用“已配置”替代真实调用成功的证据。
+
+| 工具 | 用途与约束 |
+| --- | --- |
+| `query_garden_state` | 查询用户明确授权范围内的近期花园资料或行动反馈 |
+| `search_activities` | 从审核过的复习目录中检索最多三个候选 |
+| `propose_action` | 提出候选行动和理由，无创建任务副作用 |
+| `create_task` | 模型直接调用被拒绝；仅用户点击后的确认接口可创建任务 |
+
+云端模型、花园上下文、近期行动反馈各有独立授权。未授权、未配置或调用失败时使用本地引导。当前目录检索不是向量 RAG；尚未实现 MCP Server 和多模态。FastAPI 为独立预留服务，不参与当前树屋调用链。真实模型效果、延迟和更完整的安全评测仍需另行验证。
 
 ## 工程结构
 
 ```text
-zhiyu-web/          React + TypeScript 前端
-zhiyu-server/       Spring Boot 业务后端
-zhiyu-ai-service/   FastAPI AI 服务
-deploy/              Docker Compose 和部署配置
-docs/                 开发过程文档
+zhiyu-web/          React + TypeScript + Vite 前端
+zhiyu-server/       Java 21 + Spring Boot，业务与 Agent 工具执行
+zhiyu-ai-service/   FastAPI 独立预留服务（可选）
+deploy/            PostgreSQL / Redis 的 Docker Compose 配置
+scripts/           PowerShell 启动及可选本机环境脚本
+docs/              环境、开发、验收与参赛交付文档
 ```
 
-## 快速启动
+## 快速启动：本地演示
 
-### 1. 切换 D 盘开发环境
+准备 Git、JDK 21、Maven 3.9+、Node.js 22.12+（建议 Node 24 LTS）、pnpm 12.4.2，并将命令加入 PATH，设置 `JAVA_HOME` 指向 JDK 21。当前锁文件使用 pnpm 12.4.2 验证。内存模式无需 Docker 或模型密钥。
 
-在项目根目录打开 PowerShell：
+```sh
+git clone https://github.com/Zz3yy/zhiyu-campus.git
+cd zhiyu-campus
+```
+
+终端一，在仓库根目录启动内存后端：
+
+```sh
+mvn -f zhiyu-server/pom.xml -B spring-boot:run -Dspring-boot.run.profiles=memory
+```
+
+终端二，在仓库根目录启动前端：
+
+```sh
+pnpm --dir zhiyu-web install --frozen-lockfile
+pnpm --dir zhiyu-web dev --host 127.0.0.1
+```
+
+打开 <http://127.0.0.1:5173>，阅读说明并同意创建匿名花园，然后进入树屋。后端为 8080；内存模式重启会丢失数据。保持使用同一个主机名，避免 `localhost` 与 `127.0.0.1` 的浏览器凭证不同。
+
+## 数据持久化与豆包
+
+安装并启动 Docker 后，在根目录运行：
+
+```sh
+docker compose -f deploy/docker-compose.yml up -d --wait postgres redis
+mvn -f zhiyu-server/pom.xml -B spring-boot:run
+```
+
+先停止已有的内存后端，避免占用 8080；如果此前设置过 `SPRING_PROFILES_ACTIVE=memory`，先清除此变量。默认数据库配置与 Compose 一致，Flyway 自动执行迁移。Compose 目前只提供本地开发基础设施，不是完整的生产部署。
+
+Windows PowerShell 中，配置真实豆包可使用：
 
 ```powershell
-. .\scripts\env-d.ps1
-```
-
-脚本会将 JDK 21、Maven、Python、pnpm 缓存和 Maven 本地仓库指向 `D:\Pro`。
-
-### 2. 启动基础设施
-
-```bash
-docker compose -f deploy/docker-compose.yml up -d postgres redis
-```
-
-默认后端使用 PostgreSQL 和 Flyway。当前机器没有 Docker Desktop 时，可以先使用内存模式开发：
-
-```powershell
-$env:SPRING_PROFILES_ACTIVE = 'memory'
-```
-
-### 3. 启动后端
-
-```powershell
-cd zhiyu-server
-mvn -B spring-boot:run
-```
-
-内存模式会跳过 PostgreSQL、Flyway 和 Redis，数据只保存在进程内，适合页面和接口联调。
-
-如果要在数据库模式下启用真实豆包，可在项目根目录的 VS Code PowerShell 终端使用安全启动脚本：
-
-```powershell
-Set-ExecutionPolicy -Scope Process Bypass
 .\scripts\start-doubao.ps1 -StartInfrastructure -RestartProjectBackend
 ```
 
-脚本会隐藏输入方舟 API Key，读取模型 ID，启动或等待 PostgreSQL/Redis，并启动数据库模式后端。API Key 只通过进程环境变量传递，不写入项目文件；脚本不会自动启动前端。若基础设施已手动启动，可省略 `-StartInfrastructure`；若 8080 没有旧后端，可省略 `-RestartProjectBackend`。
+脚本通过隐藏输入读取凭证，仅传给后端进程，不写入项目文件；由开发者自行运行，不要把真实 API Key 发到聊天或提交仓库。它不启动前端。其他系统可按[环境配置](docs/environment.md)和[豆包接入](docs/豆包接入.md)设置后端进程环境变量。
 
-### 4. 启动 AI 服务（可选，当前花园不依赖它）
+进入树屋后单独勾选“使用豆包”；花园资料与近期反馈默认不共享。切换授权会清空本次对话，但不能撤回已经发送给服务商的内容。
 
-```powershell
-cd zhiyu-ai-service
-& 'D:\Pro\venvs\zhiyu-ai\Scripts\python.exe' -m uvicorn app.main:app --reload --port 8000
-```
+## 环境配置
 
-### 5. 启动前端
+- [环境与运行说明](docs/environment.md)：跨机器工具要求、配置字段、可选 Python 服务及 D 盘环境。
+- [后端模型变量示例](zhiyu-server/.env.example)：字段说明；Spring 不会自动加载 `.env`。
+- [数据库变量示例](deploy/.env.example)：后端进程变量参考；当前 Compose 使用固定开发值。
+- [前端变量示例](zhiyu-web/.env.example)：可复制为 `zhiyu-web/.env.local`，只包含公开 API 地址。
 
-```powershell
-cd zhiyu-web
-pnpm install
-pnpm dev
-```
+维护者原有 D 盘环境可在每个 PowerShell 终端运行 `. .\scripts\env-d.ps1`。pnpm 安装时可加 `--store-dir D:/Pro/pnpm-store` 复用原缓存；其他机器无需此脚本或 D 盘目录。
 
-本机使用 `D:\Pro\pnpm\pnpm.cmd`（pnpm 12.4.2）。前端的 `zhiyu-web/pnpm-workspace.yaml` 配置 `nodeLinker: hoisted`，避免 Windows 下创建依赖符号链接失败；该版本未读取 `.npmrc` 中的布局设置。依赖缓存沿用 `D:/Pro/pnpm-store`，其他机器可按实际环境调整 `storeDir`。
+## 验证
 
-在 `zhiyu-web` 目录可用 `pnpm config get nodeLinker` 检查结果应为 `hoisted`，再运行 `pnpm install --frozen-lockfile` 和 `pnpm build`，无需额外传入布局参数。E2E 仍需先启动内存模式后端（8080）和前端（5173），再运行 `pnpm test:e2e`。
+在仓库根目录运行：
 
-打开 `http://127.0.0.1:5173`，阅读使用说明并同意创建匿名花园。当前默认使用 PostgreSQL，Flyway 自动执行 V1/V2。不要在不同主机名之间切换，否则浏览器会使用不同的匿名凭证。
-
-进入花园后打开“树屋倾诉”，单独勾选“使用豆包”；最近三天的植物记录/未完成任务、近期行动反馈各有独立选项，默认不共享。启用“允许使用近期行动反馈”后，只发送近七天最多 8 条目录内复习行动的类型、完成/跳过、难度反馈和帮助评分，不发送该任务的自由文本或植物笔记。本地引导会参考同一范围的反馈，但不调用外部模型。切换授权会清空本次对话与输入，不能撤回此前已外发内容。
-
-花园使用 `/api/garden` 和随机 Bearer 凭证；服务端仅保存凭证哈希。旧版依赖 `X-User-Id` 的接口默认关闭，旧数据表保留。不要在公开环境启用 `zhiyu.legacy-api.enabled=true`。当前服务用于本地开发，公开试用前仍需 HTTPS、限流及部署加固。
-
-### 6. 常用验证命令
-
-```powershell
-# 前端生产构建
-pnpm --dir zhiyu-web build
-
-# 本地后端 8080 和前端 5173 已启动时，使用已安装的 Edge
-pnpm --dir zhiyu-web test:e2e
-
-# Spring Boot 编译和测试
+```sh
 mvn -f zhiyu-server/pom.xml -B test
-
-# FastAPI 测试
-& 'D:\Pro\venvs\zhiyu-ai\Scripts\python.exe' -m pytest -q zhiyu-ai-service
+pnpm --dir zhiyu-web build
 ```
 
-## 开发约定
+后端测试采用内存存储及模拟模型供应商，不需要真实 API Key。E2E 需另行启动干净的内存后端（8080）和前端（5173），且本机安装 Microsoft Edge：
 
-- 业务功能按“需求、接口、实现、测试、文档”完成。
-- 每个功能使用独立 `feature/*` 分支。
-- 不将密钥写入代码，使用 `.env` 或本地配置文件。
-- 心理健康内容使用合成数据或经过授权的匿名数据。
-- AI 服务不可用时，业务后端必须提供安全降级提示。
+```sh
+pnpm --dir zhiyu-web test:e2e
+```
 
-## 当前迭代
+本次仓库规范化的验证范围和结果见[验证记录](docs/仓库规范化验收-2026-10-27.md)。Agent 的交互验收步骤与历史结果见[闭环验收](docs/复习Agent闭环验收-2026-10-23.md)。自动测试不代表真实模型质量或临床效果。
 
-Iteration 0：初始化项目和本地基础设施。
+## 开发与参赛材料
 
-Iteration 1：已完成匿名进入、情绪记录、活动任务和趋势查询的非 AI 闭环；数据层同时提供 PostgreSQL JDBC 实现和内存开发模式。
+- [产品构思与开发约定](产品构思与开发约定-v1.md)
+- [开发、分支和提交约定](docs/开发流程.md)
+- [仓库与参赛交付清单](docs/仓库与参赛交付清单.md)
 
-情绪花园第一轮：已实现自助闭环、匿名花园隔离、数据库保存和删除。复习 Agent 当前采用工具调用型混合架构：豆包负责意图理解、工具选择和自然语言回应；服务端提供 `query_garden_state`、`search_activities`、`propose_action` 三个受限工具，负责查询已授权资料、检索审核目录和提出无副作用行动；`create_task` 只在用户点击行动卡片后由确认接口执行。阶段、目录边界、参数、风险和授权由本地约束层校验，失败时回到本地引导。这里使用的是方舟兼容的 Function Calling 协议，不宣称已实现 MCP Server；MCP 适配仍是后续可选工作。真实模型质量与更完整风险评估仍需单独验收。
+Git 从 2026-10-26 的真实基线开始记录；此前开发文档不等同于 Git 历史，不回填或伪造旧提交。参赛团队成员及实际分工待报名信息确认，不虚构贡献。演示视频与技术文档尚未交付，要求以当届官方通知为准。
+
+当前为本地开发版本。公开部署前仍需 HTTPS、限流、费用控制和安全评测；旧版 `X-User-Id` 接口默认关闭，不应在公开环境启用 `zhiyu.legacy-api.enabled=true`。仓库尚未指定开源许可证，公开可见不等于授予开源使用许可。
