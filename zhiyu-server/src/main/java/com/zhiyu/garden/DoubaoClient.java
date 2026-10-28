@@ -5,6 +5,8 @@ import java.net.URI;
 import java.net.http.*;
 import java.time.Duration;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -107,30 +109,86 @@ public class DoubaoClient {
     }
 
     public Result parseContent(String rawContent) {
-        try {
-            String content = rawContent == null ? "" : rawContent.trim();
-            if(content.startsWith("```")) content=content.replaceFirst("^```(?:json)?\\s*","").replaceFirst("\\s*```$","");
-            var value=mapper.readTree(content);
-            if (value==null || !value.path("reply").isTextual() || !value.path("needHelp").isBoolean() || !value.path("activityIds").isArray()) return failed("豆包回复格式不符合应用要求。");
-            String reply=value.path("reply").asText().trim();
-            if(reply.isBlank() || reply.length()>600) return failed("豆包回复为空或超出展示长度。");
-            if(value.path("needHelp").asBoolean()) return new Result(new Answer(reply,true,List.of(),"SAFETY"),"");
-            String phase=value.path("phase").asText();
-            if(!Set.of("CLARIFY","RECOMMEND","PAUSE").contains(phase)) return failed("豆包回复缺少有效的流程阶段。");
-            if(reply.matches("(?s).*(你患有|你得了|你有抑郁症|你有焦虑症|保证治愈|保证治好|已.*(添加|加入|创建).*(任务|任务簿)|已.*(联系|通知|报警)).*")) return failed("豆包回复触发应用内容检查，未显示原回复。");
-            if(reply.matches("(?s).*(复习|学习|做题|刷题).{0,12}([一二两三四五六七八九十0-9]+小时|[四五六七八九十]|[4-9]|[1-9][0-9]+)分钟.*")
-                || reply.matches("(?s).*(复习|学习|做题|刷题).{0,12}[一二两三四五六七八九十0-9]+小时.*")
-                || reply.matches("(?s).*(再做一个|另外再|然后再|接着再|第二个任务).*"))
-                return failed("豆包回复增加了额外任务或负担，改用本轮引导。");
-            List<String> ids=new ArrayList<>();
-            if(value.path("activityIds").size()>1) return failed("豆包一次推荐了多个行动，改用受限流程。");
-            for(var node:value.path("activityIds")) {
-                if(!node.isTextual() || ActivityCatalog.STUDY.stream().noneMatch(a->a.id().equals(node.asText())))
-                    return failed("豆包推荐了复习目录以外的行动。");
-                ids.add(node.asText());
+        String content = rawContent == null ? "" : rawContent.strip();
+        while (content.startsWith("\uFEFF")) content = content.substring(1).strip();
+
+        List<String> candidates = new ArrayList<>();
+        addCandidate(candidates, content);
+        Matcher fenced = Pattern.compile("(?is)^\\s*```(?:json)?\\s*(.*?)\\s*```\\s*$").matcher(content);
+        if (fenced.matches()) addCandidate(candidates, fenced.group(1));
+        if (!content.startsWith("{")) extractJsonObjects(content).forEach(candidate -> addCandidate(candidates, candidate));
+
+        Result lastFailure = failed("豆包回复格式不符合应用要求。");
+        boolean parsedJson = false;
+        for (String candidate : candidates) {
+            try {
+                var value = mapper.readTree(candidate);
+                if (value == null || !value.isObject()) continue;
+                parsedJson = true;
+                Result validated = validateContent(value);
+                if (validated.answer() != null) return validated;
+                lastFailure = validated;
+            } catch (com.fasterxml.jackson.core.JsonProcessingException ignored) {
+                // Try the next bounded candidate; the final notice stays generic.
+            } catch (Exception error) {
+                lastFailure = failed("豆包回复处理失败，请检查返回格式。");
             }
-            return new Result(new Answer(reply,false,ids,phase),"");
-        } catch(com.fasterxml.jackson.core.JsonProcessingException error) { return failed("豆包返回内容无法解析为应用需要的 JSON 格式。"); }
-        catch(Exception error) { return failed("豆包回复处理失败，请检查返回格式。"); }
+        }
+        return parsedJson ? lastFailure : failed("豆包返回内容无法解析为应用需要的 JSON 格式。");
+    }
+
+    private Result validateContent(com.fasterxml.jackson.databind.JsonNode value) {
+        if (!value.path("reply").isTextual() || !value.path("needHelp").isBoolean() || !value.path("activityIds").isArray())
+            return failed("豆包回复格式不符合应用要求。");
+        String reply = value.path("reply").asText().trim();
+        if (reply.isBlank() || reply.length() > 600) return failed("豆包回复为空或超出展示长度。");
+        if (value.path("needHelp").asBoolean()) return new Result(new Answer(reply, true, List.of(), "SAFETY"), "");
+        String phase = value.path("phase").asText();
+        if (!Set.of("CLARIFY", "RECOMMEND", "PAUSE").contains(phase)) return failed("豆包回复缺少有效的流程阶段。");
+        if (reply.matches("(?s).*(你患有|你得了|你有抑郁症|你有焦虑症|保证治愈|保证治好|已.*(添加|加入|创建).*(任务|任务簿)|已.*(联系|通知|报警)).*"))
+            return failed("豆包回复触发应用内容检查，未显示原回复。");
+        if (reply.matches("(?s).*(复习|学习|做题|刷题).{0,12}([一二两三四五六七八九十0-9]+小时|[四五六七八九十]|[4-9]|[1-9][0-9]+)分钟.*")
+            || reply.matches("(?s).*(复习|学习|做题|刷题).{0,12}[一二两三四五六七八九十0-9]+小时.*")
+            || reply.matches("(?s).*(再做一个|另外再|然后再|接着再|第二个任务).*"))
+            return failed("豆包回复增加了额外任务或负担，改用本轮引导。");
+        List<String> ids = new ArrayList<>();
+        if (value.path("activityIds").size() > 1) return failed("豆包一次推荐了多个行动，改用受限流程。");
+        for (var node : value.path("activityIds")) {
+            if (!node.isTextual() || ActivityCatalog.STUDY.stream().noneMatch(a -> a.id().equals(node.asText())))
+                return failed("豆包推荐了复习目录以外的行动。");
+            ids.add(node.asText());
+        }
+        return new Result(new Answer(reply, false, ids, phase), "");
+    }
+
+    private static void addCandidate(List<String> candidates, String value) {
+        if (value != null && !value.isBlank() && !candidates.contains(value)) candidates.add(value);
+    }
+
+    /** Extract complete top-level JSON objects while respecting braces inside JSON strings. */
+    private static List<String> extractJsonObjects(String text) {
+        List<String> objects = new ArrayList<>();
+        for (int start = 0; start < text.length(); start++) {
+            if (text.charAt(start) != '{') continue;
+            int depth = 0;
+            boolean inString = false;
+            boolean escaped = false;
+            for (int index = start; index < text.length(); index++) {
+                char current = text.charAt(index);
+                if (inString) {
+                    if (escaped) escaped = false;
+                    else if (current == '\\') escaped = true;
+                    else if (current == '"') inString = false;
+                    continue;
+                }
+                if (current == '"') inString = true;
+                else if (current == '{') depth++;
+                else if (current == '}' && --depth == 0) {
+                    objects.add(text.substring(start, index + 1).strip());
+                    break;
+                }
+            }
+        }
+        return objects;
     }
 }

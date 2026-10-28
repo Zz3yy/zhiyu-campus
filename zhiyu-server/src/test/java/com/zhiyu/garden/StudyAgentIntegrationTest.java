@@ -127,6 +127,26 @@ class StudyAgentIntegrationTest {
         var second=ask(true,false,false,true);
         assertEquals("doubao",second.source());assertEquals(response,second.text());assertFalse(second.recommendationReason().isBlank());
     }
+
+    @Test void commonJsonWrappersAreAcceptedButContractValidationRemainsStrict() {
+        var client = new DoubaoClient(mapper, "synthetic-test-key", "synthetic-test-model", "https://example.invalid");
+        String json = "{\"reply\":\"先看一个小节就好。\",\"needHelp\":false,\"phase\":\"RECOMMEND\",\"activityIds\":[\"exam_outline\"]}";
+        for (String wrapped : List.of(
+                json,
+                "\uFEFF" + json,
+                "```json\n" + json + "\n```",
+                "我整理成结构化结果如下：\n" + json + "\n以上是本轮建议。")) {
+            var result = client.parseContent(wrapped);
+            assertNotNull(result.answer(), result.notice());
+            assertEquals("exam_outline", result.answer().activityIds().getFirst());
+        }
+
+        String invalid = "说明文字 {\"reply\":\"越界行动\",\"needHelp\":false,\"phase\":\"RECOMMEND\",\"activityIds\":[\"invented\"]}";
+        var rejected = client.parseContent(invalid);
+        assertNull(rejected.answer());
+        assertTrue(rejected.notice().contains("目录以外"));
+    }
+
     @Test void conversationActionMetadataChangesCloudPlanAndFallbackWithoutWritingTasks() throws Exception {
         outcome(auth,"exam_outline","DONE",5,null);
         var turns=new ArrayList<GardenChatController.Message>(history);
