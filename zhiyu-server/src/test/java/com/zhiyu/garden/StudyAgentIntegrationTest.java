@@ -32,6 +32,16 @@ class StudyAgentIntegrationTest {
             String content=override.get()!=null?override.get():mapper.writeValueAsString(Map.of("reply","资料很多时，开始确实可能让人有压力。",
                 "needHelp",false,"phase",plan.path("phase").asText(),"activityIds",plan.path("activityIds")));
             byte[] response=mapper.writeValueAsBytes(Map.of("choices",List.of(Map.of("finish_reason","stop","message",Map.of("content",content)))));
+            var request = mapper.readTree(body);
+            boolean hasTools = false;
+            for (var message : request.path("messages")) if ("tool".equals(message.path("role").asText())) hasTools = true;
+            if ("RECOMMEND".equals(plan.path("phase").asText()) && !hasTools) {
+                var search = Map.of("id", "search", "function", Map.of("name", "search_activities", "arguments", "{\"blocker\":\"START\"}"));
+                var propose = Map.of("id", "propose", "function", Map.of("name", "propose_action", "arguments", mapper.writeValueAsString(Map.of(
+                    "activityId", plan.path("activityIds").path(0).asText(), "reason", "先试一个小起点。"))));
+                response = mapper.writeValueAsBytes(Map.of("choices", List.of(Map.of("finish_reason", "tool_calls", "message",
+                    Map.of("content", "", "tool_calls", List.of(search, propose))))));
+            }
             exchange.sendResponseHeaders(status.get(),response.length);exchange.getResponseBody().write(response);exchange.close();
         });server.start();
         garden=new GardenController(repository,true,Clock.systemUTC());

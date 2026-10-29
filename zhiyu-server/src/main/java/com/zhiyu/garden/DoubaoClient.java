@@ -29,7 +29,11 @@ public class DoubaoClient {
         if(model.isBlank()) missing.add("ARK_MODEL");
         return missing;
     }
-    public record Answer(String reply, boolean needHelp, List<String> activityIds, String phase) {}
+    public record Answer(String reply, boolean needHelp, List<String> activityIds, String phase, List<String> citationIds) {
+        public Answer(String reply, boolean needHelp, List<String> activityIds, String phase) {
+            this(reply, needHelp, activityIds, phase, List.of());
+        }
+    }
     public record Result(Answer answer, String notice) {}
     public record ToolCall(String id, String name, String arguments) {}
     public record AgentResult(String content, List<ToolCall> toolCalls, String notice) {}
@@ -158,7 +162,15 @@ public class DoubaoClient {
                 return failed("豆包推荐了复习目录以外的行动。");
             ids.add(node.asText());
         }
-        return new Result(new Answer(reply, false, ids, phase), "");
+        List<String> citationIds = new ArrayList<>();
+        if (value.has("citationIds")) {
+            if (!value.path("citationIds").isArray() || value.path("citationIds").size() > 3) return failed("豆包引用格式不符合要求。");
+            for (var citation : value.path("citationIds")) {
+                if (!citation.isTextual() || citation.asText().isBlank()) return failed("豆包引用格式不符合要求。");
+                citationIds.add(citation.asText());
+            }
+        }
+        return new Result(new Answer(reply, false, ids, phase, List.copyOf(citationIds)), "");
     }
 
     private static void addCandidate(List<String> candidates, String value) {

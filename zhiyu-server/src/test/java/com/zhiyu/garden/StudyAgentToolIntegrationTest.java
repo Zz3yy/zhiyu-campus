@@ -55,7 +55,8 @@ class StudyAgentToolIntegrationTest {
             garden.updateTask(other, otherTask, new GardenController.TaskChange("SKIPPED", null, "NOT_HELPFUL"));
             var reply = chat.chat(auth, new GardenChatController.Input("继续复习", true, false, true,
                 List.of(new GardenChatController.Message("user", "资料太多")))).data();
-            assertEquals("doubao", reply.source());
+            // Reading feedback alone is not a completed recommendation workflow.
+            assertEquals("fallback", reply.source());
             assertTrue(secondRequest.get().contains("exam_outline"));
             assertTrue(secondRequest.get().contains("helpfulScore"));
             assertFalse(secondRequest.get().contains("NOT_HELPFUL"));

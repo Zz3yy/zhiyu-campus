@@ -22,3 +22,8 @@
 /* Let consent and feedback grow without clipping the chat controls on small screens. */
 .study-action-card{margin-top:12px;padding:16px;border:1px solid #c7dfcf;border-radius:16px;background:#f4f8ec;color:#405b34;overflow-wrap:anywhere}.study-action-card header{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;justify-content:space-between}.study-action-card strong{font-size:14px}.study-action-card header span,.study-action-card small{font-size:11px;color:#5d7055}.tree-message.guide .study-action-card p{padding:0;margin:10px 0;background:none;border:0;border-radius:0;box-shadow:none;font-size:12px}.study-action-card small{display:block;margin-top:8px;line-height:1.6}.tree-message.guide .study-action-card .study-action-reason{border-top:1px solid #d6e2cd;padding-top:10px}
 @media(max-width:760px){.treehouse{max-height:none;min-height:0}.treehouse-messages{flex:none;min-height:220px;max-height:50dvh}.chat-compose-dock{position:static;margin-top:0}.treehouse>.form-feedback{margin:10px 16px}.treehouse-actions{flex-wrap:wrap}}
+.knowledge-sources { margin: 12px 0; padding: 10px 14px; border: 1px solid #ccd9c8; border-radius: 12px; overflow-wrap: anywhere; }
+.knowledge-sources summary { cursor: pointer; }
+.knowledge-sources > div + div { margin-top: 12px; border-top: 1px solid #ccd9c8; padding-top: 8px; }
+.knowledge-sources p { margin: 6px 0; }
+.knowledge-sources a { color: inherit; text-decoration: underline; }
