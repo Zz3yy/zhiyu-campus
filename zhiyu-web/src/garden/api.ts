@@ -13,7 +13,7 @@ export const hasSession = () => !!localStorage.getItem(KEY)
 export const forgetSession = () => localStorage.removeItem(KEY)
 export async function request<T>(path = '', method = 'GET', body?: unknown): Promise<T> {
   const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(), path === '/chat' ? 35000 : 15000)
+  const timeout = window.setTimeout(() => controller.abort(), path === '/chat' ? 105000 : 15000)
   try {
     const token = localStorage.getItem(KEY)
     const response = await fetch(BASE + path, { method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: body === undefined ? undefined : JSON.stringify(body), signal: controller.signal })

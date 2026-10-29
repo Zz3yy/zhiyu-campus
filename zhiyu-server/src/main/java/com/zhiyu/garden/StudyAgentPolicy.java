@@ -35,6 +35,8 @@ final class StudyAgentPolicy {
     static Plan decide(String text, List<GardenChatController.Message> history, List<Feedback> feedback) {
         if (text.matches("(?s).*(先不安排|不想做任务|不要推荐|不需要建议|不想复习|想先休息|想休息|暂时不做|先不做|不想做了).*"))
             return new Plan("PAUSE", null, "可以，先不安排任务。等你想继续时再说，不会自动添加任务。");
+        if (text.matches("(?s).*(什么是|为什么|解释一下|介绍一下|讲讲).*(执行意图|灾难化|自我关怀|间隔重复|提取练习|番茄钟|费曼|完美主义|学习方法).*"))
+            return new Plan("EXPLAIN", null, "这个问题需要有依据的说明；目前没有适用的已审核资料，可以先说明你想了解哪一部分。", "");
         Feedback latest = feedback.isEmpty() ? null : feedback.getFirst();
         String currentBlocker = blocker(text);
         String contextBlocker = currentBlocker;

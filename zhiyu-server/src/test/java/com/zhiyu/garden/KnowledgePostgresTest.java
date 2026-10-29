@@ -22,11 +22,20 @@ class KnowledgePostgresTest {
         var reviews = docs.stream().map(d -> new KnowledgeBase.Review(d.id(), d.contentHash(), "合成审核员", "2026-10-01")).toList();
         var kb = new KnowledgeBase(jdbc, docs, reviews);
         var result = kb.search("只打开一份复习资料", Set.of("exam_open"));
-        assertEquals("pgvector", result.mode());
+        assertEquals("pgvector-hybrid", result.mode());
         assertEquals("MATCHED", result.status());
         assertTrue(result.citations().stream().anyMatch(c -> c.activityId().equals("exam_open")));
-        assertEquals(21, jdbc.queryForObject("SELECT count(*) FROM garden_knowledge_documents", Integer.class));
+        assertEquals(150, jdbc.queryForObject("SELECT count(*) FROM garden_knowledge_documents", Integer.class));
         assertEquals(256, jdbc.queryForObject("SELECT vector_dims(embedding) FROM garden_knowledge_documents LIMIT 1", Integer.class));
+        var filters = new KnowledgeBase.Filters(2, "anxiety", "dormitory", "low");
+        var filtered = kb.search("间隔重复的基本原理", Set.of(), filters);
+        var memory = new KnowledgeBase(null, docs, reviews).search("间隔重复的基本原理", Set.of(), filters);
+        assertEquals("MATCHED", filtered.status());
+        assertEquals(memory.citations().stream().map(KnowledgeBase.Citation::id).toList(), filtered.citations().stream().map(KnowledgeBase.Citation::id).toList());
+        assertTrue(filtered.citations().stream().allMatch(c -> c.metadata().timeMinutes() <= 2 && c.metadata().scenes().contains("dormitory")));
+        // SQL filters must constrain database state, independently of in-memory metadata.
+        jdbc.update("UPDATE garden_knowledge_documents SET time_minutes=60 WHERE id='kb-spacing-concept'");
+        assertTrue(kb.search("间隔重复的基本原理", Set.of(), filters).citations().stream().noneMatch(c -> c.id().equals("kb-spacing-concept")));
         jdbc.update("UPDATE garden_knowledge_documents SET content_hash='different-version' WHERE id='activity-exam_open'");
         assertTrue(kb.search("只打开一份复习资料", Set.of("exam_open")).citations().stream().noneMatch(c -> c.activityId().equals("exam_open")));
         var revoked = new KnowledgeBase(jdbc, docs, List.of());

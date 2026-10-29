@@ -15,7 +15,7 @@ public final class ActivityCatalog {
         a("exam_paragraph", "只读一小段复习资料", 2, "复习启动", "打开一个你愿意开始的小节，只读第一段。读完就可以停下，不追加目标。", "自拟复习启动微行动", "dandelion", "mimosa"),
         a("exam_question", "读一道熟悉的题", 3, "复习启动", "找一道你见过或相对熟悉的题，只读题目并标出已知条件；暂时不用解完。", "自拟复习启动微行动", "dandelion", "sunflower"),
         a("breathe", "给呼吸两分钟", 2, "舒缓呼吸", "坐稳或站稳，轻柔吸气，再慢慢呼气。不需要憋气或用力；不舒服就停止，恢复自然呼吸。", "https://www.nhs.uk/mental-health/self-help/guides-tools-and-activities/breathing-exercises-for-stress/", "mimosa", "cactus"),
-        a("thought", "把担心写成一句话", 3, "CBT 思维记录", "写下当下的想法，区分已发生的事实与自己的预测。若愿意，再写一个更平衡的理解。", "https://www.nhs.uk/mental-health/self-help/guides-tools-and-activities/thought-record/", "mimosa", "dandelion"),
+        a("thought", "把担心写成一句话", 3, "CBT 思维记录", "写下当下的想法，区分已发生的事实与自己的预测。若愿意，再写一个更平衡的理解。", "https://www.nhs.uk/every-mind-matters/mental-wellbeing-tips/self-help-cbt-techniques/thought-record/", "mimosa", "dandelion"),
         a("window", "在窗边停留一分钟", 1, "当下觉察", "在安全的窗边或座位上，看见三种颜色，听见两种声音，感觉脚下的支撑。无需站起。", "https://www.who.int/publications/i/item/9789240003927", "moss", "dandelion"),
         a("stretch", "让肩膀歇一会", 2, "日常自我照顾", "在舒适范围内放松肩膀和双手，也可以坐着进行。无需达到固定幅度，不适时停止。", "https://www.who.int/publications/i/item/9789240003927", "moss", "cactus"),
         a("needs", "写下一个在意的界限", 3, "情绪觉察", "写下这件事中自己在意的需要。先不急着回复对方，想一句清楚、尊重双方的表达。", "https://www.who.int/publications/i/item/9789240003927", "cactus"),

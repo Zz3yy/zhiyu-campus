@@ -148,7 +148,7 @@ public class DoubaoClient {
         if (reply.isBlank() || reply.length() > 600) return failed("豆包回复为空或超出展示长度。");
         if (value.path("needHelp").asBoolean()) return new Result(new Answer(reply, true, List.of(), "SAFETY"), "");
         String phase = value.path("phase").asText();
-        if (!Set.of("CLARIFY", "RECOMMEND", "PAUSE").contains(phase)) return failed("豆包回复缺少有效的流程阶段。");
+        if (!Set.of("CLARIFY", "RECOMMEND", "PAUSE", "EXPLAIN").contains(phase)) return failed("豆包回复缺少有效的流程阶段。");
         if (reply.matches("(?s).*(你患有|你得了|你有抑郁症|你有焦虑症|保证治愈|保证治好|已.*(添加|加入|创建).*(任务|任务簿)|已.*(联系|通知|报警)).*"))
             return failed("豆包回复触发应用内容检查，未显示原回复。");
         if (reply.matches("(?s).*(复习|学习|做题|刷题).{0,12}([一二两三四五六七八九十0-9]+小时|[四五六七八九十]|[4-9]|[1-9][0-9]+)分钟.*")

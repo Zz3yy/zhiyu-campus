@@ -1,0 +1,10 @@
+[
+  {"id":"learning","title":"Improving Students’ Learning With Effective Learning Techniques","authors":"Dunlosky et al.","year":2013,"url":"https://doi.org/10.1177/1529100612453266","verification":"2026-10-29 Crossref DOI 与题名核对通过；未导入付费全文或摘要原文","usage":"原创中文概念归纳；逐条证据对应关系待人工审核"},
+  {"id":"intentions","title":"Implementation intentions: Strong effects of simple plans.","authors":"Peter M. Gollwitzer","year":1999,"url":"https://doi.org/10.1037/0003-066X.54.7.493","verification":"2026-10-29 Crossref DOI 与题名核对通过","usage":"原创中文概念归纳，校园示例自拟；无论文原文摘录"},
+  {"id":"compassion","title":"Self-Compassion: An Alternative Conceptualization of a Healthy Attitude Toward Oneself","authors":"Kristin D. Neff","year":2003,"url":"https://doi.org/10.1080/15298860309032","verification":"2026-10-29 Crossref DOI 与题名核对通过","usage":"原创中文概念归纳；不从概念论文推断个体效果"},
+  {"id":"thought","title":"Thought record","authors":"NHS Every Mind Matters","url":"https://www.nhs.uk/every-mind-matters/mental-wellbeing-tips/self-help-cbt-techniques/thought-record/","verification":"2026-10-29 HTTP 200；核对七项提示、证据与更中性的替代想法；旧 mental-health 路径失效","usage":"原创中文归纳与场景改写；最坏/最好/最可能三栏不是 NHS 原文七步，已标为项目改写"},
+  {"id":"who","title":"Doing What Matters in Times of Stress: An Illustrated Guide","authors":"World Health Organization","year":2020,"url":"https://www.who.int/publications/i/item/9789240003927","verification":"2026-10-29 出版物入口 HTTP 200；章节对应关系仍待人工核对","usage":"压力支持框架参考；校园方案为项目自拟，非 WHO 背书"},
+  {"id":"design","title":"项目原创：考试压力场景设计","url":"产品构思与开发约定-v1.md","verification":"项目设计稿","usage":"非研究结论，需内容审核与用户可用性验证"},
+  {"id":"legacy-catalog","title":"原校园行动目录","url":"ActivityCatalog.java","verification":"保留原 19 条行动及各自参考链接，全部仍待审阅","usage":"原有目录草稿，不等于内容被参考机构验证"},
+  {"id":"legacy-guide","title":"原认知与复习引导","url":"产品构思与开发约定-v1.md","verification":"保留原 2 条引导，来源见各条 JSON","usage":"项目归纳草稿"}
+]

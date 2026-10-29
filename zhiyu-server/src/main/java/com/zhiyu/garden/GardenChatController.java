@@ -28,14 +28,18 @@ public class GardenChatController {
     private static final String PROMPT = """
         你是知愈校园·情绪花园的守园人知知，是帮助大学生应对考试压力、开始复习的 AI 助手，不是医生或心理治疗师。
         当前使用有边界的流程：先澄清卡点，再推荐一个低门槛行动，只有用户点击确认才创建任务。
-        你可以调用服务端工具完成工作流：query_garden_state 读取已授权资料，search_activities 检索受限目录，propose_action 提出一个无副作用的行动。推荐前必须先成功 search_activities 再 propose_action。
+        你可以调用服务端工具完成工作流：query_garden_state 读取已授权资料，search_knowledge_base 主动检索知识，search_activities 检索受限目录，propose_action 提出一个无副作用的行动。
+        推荐前必须先成功 search_knowledge_base，再 search_activities，再 propose_action。你决定查询词及是否继续检索；每轮最多三次知识检索。
+        用户说太难、不想看、没有帮助时，根据明确反馈选择更低认知负荷或不同角度重新检索；保留用户的场景与时间限制，不重复推销被拒绝的内容。
+        首次检索无结果时可换一个有依据的查询；仍不适用就如实说明缺口，不编造知识。工具返回分数只表示检索排序，不是心理判断或疗效概率。
         create_task 需要用户点击确认，聊天中调用它永远不会成功。服务端提供本轮 phase、activityIds、guidance、action 和 reason；保持阶段及行动约束，用1至3句自然中文回应最新消息。
         guidance 是本轮沟通意图和本地备用说法，不要照抄。结合最近对话回答，不要每次以“我能理解”开头，不复述已说清的卡点。
         CLARIFY 时只问一个与当前卡点有关的短问题；已说担心学不会，就追问具体内容或困难，不再问用户属于哪类。
+        EXPLAIN 时用户主动询问知识：必须调用 search_knowledge_base，依据已审核结果解释原理、适用情境与边界，citationIds 不能为空，activityIds 为空，不创建练习任务。
         RECOMMEND 时回应当前困难并说明这一步为何合适；用户想换办法时直接回应并换角度，不继续推销已拒绝的建议。
         页面另有行动卡片显示标题、时间、步骤、理由与确认按钮，reply 不抄卡片、不重复添加任务的免责声明。
         可以自然提问或解释指定行动，但不另设第二个行动、时长或计划。PAUSE 时尊重休息，不劝做任务。
-        CLARIFY 或 PAUSE 阶段 activityIds 必须为空；RECOMMEND 阶段必须原样返回本轮指定的唯一 activityId。
+        CLARIFY 或 PAUSE 阶段 activityIds 必须为空；RECOMMEND 阶段必须返回 propose_action 成功确认的唯一 activityId。
         不把完成等同于有效，不把跳过归因为懒惰、能力不足或病症，不自动加量、不评判、不保证效果。
         不诊断、不推荐药物及剂量、不提供伤害方法，不承诺保密、真人值守或自动联系他人。
         如发现自伤、伤人、紧急危险，needHelp=true、activityIds=[]，不推荐普通行动。
@@ -68,7 +72,15 @@ public class GardenChatController {
     public record Reply(String text, String source, String notice, boolean needHelp,
                         List<ActivityCatalog.Activity> activities, String phase, String recommendationReason,
                         List<String> toolTrace, String confirmationToken,
-                        List<KnowledgeBase.Citation> citations, List<KnowledgeBase.Citation> activitySources, String retrievalStatus) {
+                        List<KnowledgeBase.Citation> citations, List<KnowledgeBase.Citation> activitySources, String retrievalStatus,
+                        List<KnowledgeBase.Trace> retrievalTrace) {
+        public Reply(String text, String source, String notice, boolean needHelp,
+                     List<ActivityCatalog.Activity> activities, String phase, String recommendationReason,
+                     List<String> toolTrace, String confirmationToken, List<KnowledgeBase.Citation> citations,
+                     List<KnowledgeBase.Citation> activitySources, String retrievalStatus) {
+            this(text, source, notice, needHelp, activities, phase, recommendationReason, toolTrace, confirmationToken,
+                citations, activitySources, retrievalStatus, List.of());
+        }
         public Reply(String text, String source, String notice, boolean needHelp,
                      List<ActivityCatalog.Activity> activities, String phase, String recommendationReason,
                      List<String> toolTrace, String confirmationToken) {
@@ -114,6 +126,17 @@ public class GardenChatController {
         var feedback = !input.cloudConsent() || input.includeActionFeedback()
             ? StudyAgentPolicy.recentFeedback(garden, Instant.now()) : List.<StudyAgentPolicy.Feedback>of();
         var plan = StudyAgentPolicy.decide(input.text(), input.history(), feedback);
+        var userFilters = KnowledgeBase.userFilters(input.history(), input.text());
+        if (knowledge != null && plan.action() != null) {
+            String originalId = plan.action().id();
+            var source = knowledge.reviewQueue().stream().filter(d -> d.activityId().equals(originalId)).findFirst();
+            if (source.isPresent() && !userFilters.accepts(source.get())) {
+                var candidates = StudyAgentPolicy.searchCandidates(input.text(), input.history(), feedback, userFilters.timeLimit() == null ? 3 : Math.min(3, userFilters.timeLimit()));
+                var alternative = candidates.stream().filter(a -> knowledge.reviewQueue().stream().anyMatch(d -> d.activityId().equals(a.id()) && userFilters.accepts(d))).findFirst();
+                if (alternative.isEmpty()) return ApiResponse.success(new Reply("当前时间或场景不适合目录中的复习行动，可以先停下；不必勉强开始。", "fallback", "未找到符合你明确限制的行动。", false, List.of(), "PAUSE", ""));
+                plan = new StudyAgentPolicy.Plan(plan.phase(), alternative.get(), "我们把起点缩小到你愿意尝试的范围。", "根据你明确提供的时间、场景与负担调整。");
+            }
+        }
         if (!input.cloudConsent()) return ApiResponse.success(localGuide(plan, "当前使用本地引导；会参考近期复习行动反馈，内容未发送给豆包。", List.of(), owner, input.entryId()));
         if (!client.configured()) return ApiResponse.success(localGuide(plan, "当前未启用外部模型，先使用本地引导；内容未发送给豆包。", List.of(), owner, input.entryId()));
         // Safety screening still happens before any provider call, even though authorized data is fetched by a tool later.
@@ -122,11 +145,11 @@ public class GardenChatController {
         Set<String> allowed = new HashSet<>();
         StudyAgentPolicy.searchCandidates(input.text(), input.history(), feedback, 3).forEach(a -> allowed.add(a.id()));
         var retrieval = knowledge == null ? new KnowledgeBase.Retrieval("disabled", "NOT_USED", List.of())
-            : knowledge.search(sanitize(input.text()), allowed);
-        if (knowledge != null && "RECOMMEND".equals(plan.phase())
-                && retrieval.citations().stream().noneMatch(c -> plan.action() != null && c.activityId().equals(plan.action().id()))) {
-            return ApiResponse.success(localGuide(plan, "暂未检索到已审核的适用行动，显示原目录草稿；本轮未调用豆包。检索状态：" + retrieval.status(),
-                List.of(), owner, input.entryId()));
+            : knowledge.search(sanitize(input.text()), allowed, userFilters);
+        if (knowledge != null && Set.of("RECOMMEND", "EXPLAIN").contains(plan.phase())
+                && Set.of("NO_APPROVED_CONTENT", "UNAVAILABLE").contains(retrieval.status())) {
+            return ApiResponse.success(withRetrieval(localGuide(plan, "暂未检索到已审核的适用依据，本轮使用本地引导、未调用豆包。检索状态：" + retrieval.status(),
+                List.of(), owner, input.entryId()), List.of(new KnowledgeBase.Trace("initial", retrieval))));
         }
 
         List<Map<String,Object>> messages = new ArrayList<>();
@@ -154,12 +177,21 @@ public class GardenChatController {
         ToolSession toolSession = new ToolSession(garden, input, plan, feedback);
         toolSession.evidence = retrieval.citations();
         toolSession.retrievalRequired = knowledge != null;
+        toolSession.filters = userFilters;
+        toolSession.allowed = allowed;
+        if (knowledge != null) toolSession.retrievalTrace.add(new KnowledgeBase.Trace("initial", retrieval));
         String failure = "";
-        for (int turn = 0; turn < 4; turn++) {
-            String toolChoice = "RECOMMEND".equals(plan.phase()) && toolSession.trace.isEmpty() ? "required" : "auto";
+        // Each provider request already has a 25-second timeout. Leave that budget before starting another.
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(90);
+        for (int turn = 0; turn < 7; turn++) {
+            if (deadline - System.nanoTime() < java.util.concurrent.TimeUnit.SECONDS.toNanos(25)) {
+                failure = "知识检索工作流达到本轮时间预算，改用本地引导"; break;
+            }
+            String toolChoice = Set.of("RECOMMEND", "EXPLAIN").contains(plan.phase()) && toolSession.trace.isEmpty() ? "required" : "auto";
             var result = client.completeAgent(messages, StudyAgentTools.definitions(), toolChoice);
             if (!result.notice().isBlank()) { failure = result.notice(); break; }
             if (!result.toolCalls().isEmpty()) {
+                if (result.toolCalls().size() > 8) { failure = "模型单轮工具调用过多，改用本地引导"; break; }
                 Map<String,Object> assistant = new LinkedHashMap<>();
                 assistant.put("role", "assistant"); assistant.put("content", result.content());
                 List<Map<String,Object>> calls = new ArrayList<>();
@@ -179,6 +211,9 @@ public class GardenChatController {
             var answer = parsed.answer();
             if (answer == null) { failure = parsed.notice(); break; }
             if (answer.needHelp() || RISK.matcher(answer.reply()).find()) return ApiResponse.success(help());
+            if ("EXPLAIN".equals(plan.phase()) && (!toolSession.knowledgeSearched || answer.citationIds().isEmpty())) {
+                failure = "知识说明缺少已审核检索依据，改用本地引导"; break;
+            }
             if ("RECOMMEND".equals(plan.phase()) && (!toolSession.searched || toolSession.proposed == null)) {
                 failure = "豆包未完成检索与行动提议，改用本地引导"; break;
             }
@@ -187,20 +222,20 @@ public class GardenChatController {
             if (!plan.phase().equals(answer.phase()) || !expectedIds.equals(answer.activityIds())) {
                 failure = "豆包回复不符合本轮复习流程，改用本地引导"; break;
             }
-            List<KnowledgeBase.Citation> citations = retrieval.citations().stream().filter(c -> answer.citationIds().contains(c.id())).toList();
+            List<KnowledgeBase.Citation> citations = toolSession.evidence.stream().filter(c -> answer.citationIds().contains(c.id())).toList();
             if (knowledge != null && (!citations.stream().map(KnowledgeBase.Citation::id).collect(java.util.stream.Collectors.toSet()).containsAll(answer.citationIds())
-                    || (!retrieval.citations().isEmpty() && citations.isEmpty())
+                    || (!toolSession.evidence.isEmpty() && citations.isEmpty())
                     || (selected != null && citations.stream().noneMatch(c -> c.activityId().equals(selected.id()))))) {
                 failure = "豆包引用未匹配本轮检索依据，改用本地引导"; break;
             }
-            return ApiResponse.success(new Reply(answer.reply(), "doubao",
+            return ApiResponse.success(withRetrieval(new Reply(answer.reply(), "doubao",
                 "豆包生成回复 · 服务端工具调用已校验 · AI 内容可能有误，不替代专业支持", false,
                 selected == null ? List.of() : List.of(selected), plan.phase(), toolSession.reason(selected), List.copyOf(toolSession.trace),
                 issueConfirmation(owner, selected, input.entryId()), citations,
-                sources(selected == null ? List.of() : List.of(selected)), retrieval.mode() + ":" + retrieval.status()));
+                sources(selected == null ? List.of() : List.of(selected)), retrieval.mode() + ":" + retrieval.status()), toolSession.retrievalTrace));
         }
-        return ApiResponse.success(localGuide(plan,
-            (failure.isBlank() ? "豆包工作流未完成" : failure) + "；当前显示本地引导；本次内容可能已发送给服务商。", toolSession.trace, owner, input.entryId()));
+        return ApiResponse.success(withRetrieval(localGuide(plan,
+            (failure.isBlank() ? "豆包工作流未完成" : failure) + "；当前显示本地引导；本次内容可能已发送给服务商。", toolSession.trace, owner, input.entryId()), toolSession.retrievalTrace));
     }
 
     @PostMapping("/tools/create_task")
@@ -236,6 +271,7 @@ public class GardenChatController {
             var args = mapper.readTree(call.arguments().isBlank() ? "{}" : call.arguments());
             return switch (call.name()) {
                 case "query_garden_state" -> queryGardenState(args, session);
+                case "search_knowledge_base" -> searchKnowledge(args, session);
                 case "search_activities" -> searchActivities(args, session);
                 case "propose_action" -> proposeAction(args, session);
                 case "create_task" -> mapper.writeValueAsString(Map.of("ok", false, "reason", "requires_user_confirmation"));
@@ -244,6 +280,28 @@ public class GardenChatController {
         } catch (Exception error) {
             return "{\"ok\":false,\"reason\":\"invalid_tool_arguments\"}";
         }
+    }
+
+    private String searchKnowledge(com.fasterxml.jackson.databind.JsonNode args, ToolSession session) throws com.fasterxml.jackson.core.JsonProcessingException {
+        if (knowledge == null) return mapper.writeValueAsString(Map.of("ok", false, "reason", "knowledge_unavailable"));
+        if (++session.knowledgeCalls > 3) return mapper.writeValueAsString(Map.of("ok", false, "reason", "retrieval_budget_exhausted"));
+        if (!args.isObject()) throw new IllegalArgumentException("Expected object");
+        var names = args.fieldNames();
+        while (names.hasNext()) if (!Set.of("query", "emotion", "time_limit", "scene", "cognitive_load").contains(names.next())) throw new IllegalArgumentException("Unknown field");
+        if (!args.path("query").isTextual() || args.path("query").asText().isBlank() || args.path("query").asText().length() > 300) throw new IllegalArgumentException("Invalid query");
+        if (args.has("time_limit") && !args.path("time_limit").isIntegralNumber()) throw new IllegalArgumentException("Invalid time");
+        for (String field : List.of("emotion", "scene", "cognitive_load")) if (args.has(field) && !args.path(field).isTextual()) throw new IllegalArgumentException("Invalid filter");
+        var requested = new KnowledgeBase.Filters(args.has("time_limit") ? args.path("time_limit").intValue() : null,
+            args.has("emotion") ? args.path("emotion").asText() : null, args.has("scene") ? args.path("scene").asText() : null,
+            args.has("cognitive_load") ? args.path("cognitive_load").asText() : null);
+        session.filters = session.filters.narrow(requested);
+        var result = knowledge.search(sanitize(args.path("query").asText()), session.allowed, session.filters);
+        session.retrievalTrace.add(new KnowledgeBase.Trace("agent_search_" + session.knowledgeCalls, result));
+        // Re-query replaces evidence and invalidates previous proposals: old hits cannot authorize a new plan.
+        session.evidence = result.citations(); session.searched = false; session.proposed = null; session.candidates.clear();
+        session.knowledgeSearched = "MATCHED".equals(result.status());
+        return mapper.writeValueAsString(Map.of("ok", session.knowledgeSearched, "retrieval", result,
+            "guidance", session.knowledgeSearched ? "只引用当前结果；需要行动时再搜索行动目录" : "未找到适用依据；可在预算内改写查询，仍无结果则说明缺口并使用本地兜底"));
     }
 
     private String queryGardenState(com.fasterxml.jackson.databind.JsonNode args, ToolSession session)
@@ -262,11 +320,23 @@ public class GardenChatController {
 
     private String searchActivities(com.fasterxml.jackson.databind.JsonNode args, ToolSession session)
             throws com.fasterxml.jackson.core.JsonProcessingException {
+        if (session.retrievalRequired && !session.knowledgeSearched) return mapper.writeValueAsString(Map.of("ok", false, "reason", "knowledge_search_required"));
         int minutes = Math.max(1, Math.min(3, args.path("minutes").asInt(3)));
+        if (session.filters.timeLimit() != null) minutes = Math.min(minutes, session.filters.timeLimit());
+        final int minuteCeiling = minutes;
+        if (session.retrievalRequired) {
+            String query = session.input.text() + " " + (session.plan.action() == null ? "复习启动" : session.plan.action().title());
+            var result = knowledge.searchActions(query, session.allowed, session.filters);
+            session.retrievalTrace.add(new KnowledgeBase.Trace("action_search", result));
+            Map<String, KnowledgeBase.Citation> merged = new LinkedHashMap<>();
+            session.evidence.forEach(c -> merged.put(c.id(), c)); result.citations().forEach(c -> merged.put(c.id(), c));
+            session.evidence = List.copyOf(merged.values());
+        }
         Set<String> avoid = new HashSet<>();
         for (var node : args.path("avoidActivityIds")) if (node.isTextual()) avoid.add(node.asText());
         session.candidates.clear();
         StudyAgentPolicy.searchCandidates(session.input.text(), session.input.history(), session.feedback, minutes).stream()
+            .filter(activity -> activity.minutes() <= minuteCeiling)
             .filter(activity -> !avoid.contains(activity.id()) || activity.id().equals(session.plan.action() == null ? "" : session.plan.action().id()))
             .filter(activity -> !session.retrievalRequired || session.evidence.stream().anyMatch(c -> c.activityId().equals(activity.id())))
             .limit(3).forEach(session.candidates::add);
@@ -307,6 +377,11 @@ public class GardenChatController {
         final GardenState garden; final Input input; final StudyAgentPolicy.Plan plan;
         final List<StudyAgentPolicy.Feedback> feedback; final List<String> trace = new ArrayList<>();
         final List<ActivityCatalog.Activity> candidates = new ArrayList<>();
+        final List<KnowledgeBase.Trace> retrievalTrace = new ArrayList<>();
+        KnowledgeBase.Filters filters = KnowledgeBase.Filters.none();
+        Set<String> allowed = Set.of();
+        int knowledgeCalls;
+        boolean knowledgeSearched;
         boolean searched, retrievalRequired;
         List<KnowledgeBase.Citation> evidence = List.of();
         ActivityCatalog.Activity proposed; String proposedReason = "";
@@ -336,6 +411,11 @@ public class GardenChatController {
     }
     private List<KnowledgeBase.Citation> sources(List<ActivityCatalog.Activity> activities) {
         return knowledge == null ? List.of() : activities.stream().map(a -> knowledge.activitySource(a.id())).filter(Objects::nonNull).toList();
+    }
+    private static Reply withRetrieval(Reply reply, List<KnowledgeBase.Trace> trace) {
+        String status = trace.isEmpty() ? reply.retrievalStatus() : trace.getLast().result().mode() + ":" + trace.getLast().result().status();
+        return new Reply(reply.text(), reply.source(), reply.notice(), reply.needHelp(), reply.activities(), reply.phase(), reply.recommendationReason(),
+            reply.toolTrace(), reply.confirmationToken(), reply.citations(), reply.activitySources(), status, List.copyOf(trace));
     }
     private String issueConfirmation(String owner, ActivityCatalog.Activity activity, String entryId) {
         if (activity == null || !activity.id().startsWith("exam_")) return null;
