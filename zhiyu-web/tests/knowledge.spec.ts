@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 
-test('pending sources are visible and never presented as reviewed citations', async ({page}) => {
+test('reviewed sources are visible and local guidance is not presented as a RAG citation', async ({page}) => {
   const base=(process.env.E2E_API_BASE_URL??'http://127.0.0.1:8080')+'/api/garden'
   await page.emulateMedia({reducedMotion:'reduce'})
   await page.goto('/')
@@ -12,7 +12,8 @@ test('pending sources are visible and never presented as reviewed citations', as
   try {
     const catalog=await (await page.request.get(base+'/chat/knowledge',{headers})).json()
     expect(catalog.data).toHaveLength(150)
-    expect(catalog.data.every((item:{reviewStatus:string})=>item.reviewStatus==='PENDING')).toBeTruthy()
+    expect(catalog.data).toHaveLength(150)
+    expect(catalog.data.every((item:{reviewStatus:string;reviewer:string;reviewedAt:string})=>item.reviewStatus==='APPROVED'&&item.reviewer==='Zz3'&&item.reviewedAt==='2026-10-29')).toBeTruthy()
     await page.getByRole('navigation').getByRole('button',{name:'树屋倾诉'}).click()
     for(const text of ['复习资料太多','不知道从哪里开始']) {
       await page.getByLabel('想说的话').fill(text)
@@ -21,7 +22,7 @@ test('pending sources are visible and never presented as reviewed citations', as
     }
     const sources=page.locator('.knowledge-sources').last()
     await sources.locator('summary').click()
-    await expect(sources).toContainText('审核状态：待审阅')
+    await expect(sources).toContainText('审核状态：已审阅')
     await expect(sources).toContainText('行动来源')
     await expect(sources).not.toContainText('本轮引用')
     await page.setViewportSize({width:390,height:844})

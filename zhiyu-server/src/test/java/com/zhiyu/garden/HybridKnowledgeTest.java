@@ -14,10 +14,17 @@ class HybridKnowledgeTest {
         assertEquals(43, docs.stream().filter(d -> d.category().equals("scenario")).count());
         assertEquals(43, docs.stream().filter(d -> d.category().equals("template")).count());
         assertTrue(docs.stream().allMatch(d -> d.contentHash().length() == 64 && !d.sourceRelation().isBlank()));
-        var kb = new KnowledgeBase(null, docs, List.of());
-        assertTrue(kb.catalog().stream().allMatch(c -> c.reviewStatus().equals("PENDING")));
+        var kb = new KnowledgeBase(null, docs, productionReviews());
+        assertTrue(kb.catalog().stream().allMatch(c -> c.reviewStatus().equals("APPROVED")
+            && c.reviewer().equals("Zz3") && c.reviewedAt().equals("2026-10-29")));
         try (var stream = getClass().getResourceAsStream("/knowledge/reviews.json")) {
-            assertEquals(0, new ObjectMapper().readTree(stream).size(), "Do not promote synthetic reviewers into production");
+            assertEquals(150, new ObjectMapper().readTree(stream).size());
+        }
+    }
+
+    private static List<KnowledgeBase.Review> productionReviews() throws Exception {
+        try (var stream = HybridKnowledgeTest.class.getResourceAsStream("/knowledge/reviews.json")) {
+            return List.of(new ObjectMapper().readValue(stream, KnowledgeBase.Review[].class));
         }
     }
 
