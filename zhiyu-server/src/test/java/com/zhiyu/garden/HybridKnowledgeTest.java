@@ -28,6 +28,28 @@ class HybridKnowledgeTest {
         }
     }
 
+    @Test void clarifyPhaseSkipsKnowledgeRetrievalAndTools() throws Exception {
+        var mapper = new ObjectMapper(); var repo = new MemoryGardenRepository(mapper);
+        var garden = new GardenController(repo, true, Clock.systemUTC());
+        var client = new DoubaoClient(mapper, "synthetic", "synthetic", "https://example.invalid") {
+            @Override public AgentResult completeAgent(List<Map<String,Object>> messages, List<Map<String,Object>> tools, String choice) {
+                assertFalse(messages.stream().anyMatch(message -> message.get("content").toString().contains("本轮检索资料")));
+                var names = tools.stream().map(tool -> ((Map<?, ?>) tool.get("function")).get("name").toString()).toList();
+                assertFalse(names.contains("search_knowledge_base"));
+                assertFalse(names.contains("search_activities"));
+                assertFalse(names.contains("propose_action"));
+                return new AgentResult("{\"reply\":\"是某一章的概念没弄懂，还是一看到题就不知道怎么下手？\",\"needHelp\":false,\"phase\":\"CLARIFY\",\"activityIds\":[]}", List.of(), "");
+            }
+        };
+        var chat = new GardenChatController(repo, client, mapper); chat.setKnowledgeBase(KnowledgeBaseTest.reviewed());
+        String auth = "Bearer " + garden.session(new GardenController.Consent(true)).data().token();
+        var reply = chat.chat(auth, new GardenChatController.Input("在学习考研英语的时候，我感觉太难了", true, false, List.of())).data();
+        assertEquals("doubao", reply.source());
+        assertEquals("CLARIFY", reply.phase());
+        assertTrue(reply.retrievalTrace().isEmpty());
+        assertTrue(reply.citations().isEmpty());
+    }
+
     @Test void hybridRanksRelevantConceptsAndFiltersBeforeRanking() {
         var kb = KnowledgeBaseTest.reviewed();
         var result = kb.search("间隔重复的基本原理", Set.of(), new KnowledgeBase.Filters(2, "anxiety", "dormitory", "low"));

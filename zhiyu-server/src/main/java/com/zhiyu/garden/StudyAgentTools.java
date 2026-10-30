@@ -2,6 +2,7 @@ package com.zhiyu.garden;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** Tool schemas exposed to the bounded study agent. Each tool is audited locally. */
 final class StudyAgentTools {
@@ -38,6 +39,15 @@ final class StudyAgentTools {
                     "entryId", Map.of("type", "string")
                 ), "required", List.of("activityId"), "additionalProperties", false))
         );
+    }
+
+    static List<Map<String, Object>> definitions(String phase) {
+        if (Set.of("RECOMMEND", "EXPLAIN").contains(phase)) return definitions();
+        return definitions().stream().filter(tool -> {
+            Object rawFunction = tool.get("function");
+            if (!(rawFunction instanceof Map<?, ?> function)) return true;
+            return !Set.of("search_knowledge_base", "search_activities", "propose_action").contains(function.get("name"));
+        }).toList();
     }
 
     private static Map<String, Object> function(String name, String description, Map<String, Object> parameters) {

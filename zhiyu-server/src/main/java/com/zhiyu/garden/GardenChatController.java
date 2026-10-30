@@ -35,7 +35,7 @@ public class GardenChatController {
         你是知愈校园·情绪花园的守园人知知，是帮助大学生应对考试压力、开始复习的 AI 助手，不是医生或心理治疗师。
         当前使用有边界的流程：先澄清卡点，再推荐一个低门槛行动，只有用户点击确认才创建任务。
         你可以调用服务端工具完成工作流：query_garden_state 读取已授权资料，search_knowledge_base 主动检索知识，search_activities 检索受限目录，propose_action 提出一个无副作用的行动。
-        推荐前必须先成功 search_knowledge_base，再 search_activities，再 propose_action。你决定查询词及是否继续检索；每轮最多三次知识检索。
+        RECOMMEND 前必须先成功 search_knowledge_base，再 search_activities，再 propose_action。EXPLAIN 必须先检索知识。CLARIFY 和 PAUSE 不检索知识或行动目录；你决定查询词及是否继续检索；每轮最多三次知识检索。
         用户说太难、不想看、没有帮助时，根据明确反馈选择更低认知负荷或不同角度重新检索；保留用户的场景与时间限制，不重复推销被拒绝的内容。
         首次检索无结果时可换一个有依据的查询；仍不适用就如实说明缺口，不编造知识。工具返回分数只表示检索排序，不是心理判断或疗效概率。
         create_task 需要用户点击确认，聊天中调用它永远不会成功。服务端提供本轮 phase、activityIds、guidance、action 和 reason；保持阶段及行动约束，用1至3句自然中文回应最新消息。
@@ -149,9 +149,11 @@ public class GardenChatController {
         // Safety screening still happens before any provider call, even though authorized data is fetched by a tool later.
         if (input.includeGardenContext() && RISK.matcher(mapper.writeValueAsString(gardenContext(garden))).find()) return ApiResponse.success(help());
 
+        boolean knowledgePhase = Set.of("RECOMMEND", "EXPLAIN").contains(plan.phase());
         Set<String> allowed = new HashSet<>();
         StudyAgentPolicy.searchCandidates(input.text(), input.history(), feedback, 3).forEach(a -> allowed.add(a.id()));
-        var retrieval = knowledge == null ? new KnowledgeBase.Retrieval("disabled", "NOT_USED", List.of())
+        var retrieval = knowledge == null || !knowledgePhase
+            ? new KnowledgeBase.Retrieval("disabled", "NOT_USED", List.of())
             : knowledge.search(sanitize(input.text()), allowed, userFilters);
         if (knowledge != null && Set.of("RECOMMEND", "EXPLAIN").contains(plan.phase())
                 && Set.of("NO_APPROVED_CONTENT", "UNAVAILABLE").contains(retrieval.status())) {
@@ -186,7 +188,7 @@ public class GardenChatController {
         toolSession.retrievalRequired = knowledge != null;
         toolSession.filters = userFilters;
         toolSession.allowed = allowed;
-        if (knowledge != null) toolSession.retrievalTrace.add(new KnowledgeBase.Trace("initial", retrieval));
+        if (knowledge != null && knowledgePhase) toolSession.retrievalTrace.add(new KnowledgeBase.Trace("initial", retrieval));
         String failure = "";
         // Leave one configured provider-request budget before starting another model turn.
         long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(Math.max(1, workflowTimeoutMillis));
@@ -197,7 +199,7 @@ public class GardenChatController {
             }
             turns++;
             String toolChoice = Set.of("RECOMMEND", "EXPLAIN").contains(plan.phase()) && toolSession.trace.isEmpty() ? "required" : "auto";
-            var result = client.completeAgent(messages, StudyAgentTools.definitions(), toolChoice);
+            var result = client.completeAgent(messages, StudyAgentTools.definitions(plan.phase()), toolChoice);
             if (!result.notice().isBlank()) { failure = result.notice(); break; }
             if (!result.toolCalls().isEmpty()) {
                 if (result.toolCalls().size() > 8) { failure = "模型单轮工具调用过多，改用本地引导"; break; }
@@ -294,6 +296,8 @@ public class GardenChatController {
 
     private String searchKnowledge(com.fasterxml.jackson.databind.JsonNode args, ToolSession session) throws com.fasterxml.jackson.core.JsonProcessingException {
         if (knowledge == null) return mapper.writeValueAsString(Map.of("ok", false, "reason", "knowledge_unavailable"));
+        if (!Set.of("RECOMMEND", "EXPLAIN").contains(session.plan.phase()))
+            return mapper.writeValueAsString(Map.of("ok", false, "reason", "knowledge_search_not_needed_in_phase"));
         if (++session.knowledgeCalls > 3) return mapper.writeValueAsString(Map.of("ok", false, "reason", "retrieval_budget_exhausted"));
         if (!args.isObject()) throw new IllegalArgumentException("Expected object");
         var names = args.fieldNames();
@@ -330,6 +334,7 @@ public class GardenChatController {
 
     private String searchActivities(com.fasterxml.jackson.databind.JsonNode args, ToolSession session)
             throws com.fasterxml.jackson.core.JsonProcessingException {
+        if (!"RECOMMEND".equals(session.plan.phase())) return mapper.writeValueAsString(Map.of("ok", false, "reason", "recommendation_not_allowed"));
         if (session.retrievalRequired && !session.knowledgeSearched) return mapper.writeValueAsString(Map.of("ok", false, "reason", "knowledge_search_required"));
         int minutes = Math.max(1, Math.min(3, args.path("minutes").asInt(3)));
         if (session.filters.timeLimit() != null) minutes = Math.min(minutes, session.filters.timeLimit());
