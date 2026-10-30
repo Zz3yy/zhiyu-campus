@@ -97,4 +97,25 @@ class DoubaoIntegrationTest {
         var partial=new DoubaoClient(new ObjectMapper(),"secret","","https://ark.cn-beijing.volces.com/api/v3");
         assertEquals(List.of("ARK_MODEL"),partial.missingConfig());
     }
+
+    @Test void providerResponseTimeoutIsDistinctAndConfigurable() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/api/v3/chat/completions", exchange -> {
+            try { Thread.sleep(500); } catch (InterruptedException error) { Thread.currentThread().interrupt(); }
+            try {
+                byte[] body = "{}".getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(200, body.length);
+                exchange.getResponseBody().write(body);
+            } catch (java.io.IOException ignored) {
+                // The client has already timed out.
+            } finally { exchange.close(); }
+        });
+        server.start();
+        try {
+            var client = new DoubaoClient(new ObjectMapper(), "test-key", "test-model",
+                "http://127.0.0.1:" + server.getAddress().getPort() + "/api/v3", 1_000, 100);
+            var result = client.completeAgent(List.of(Map.of("role", "user", "content", "test")), List.of());
+            assertEquals("豆包回复超时，请稍后重试。", result.notice());
+        } finally { server.stop(0); }
+    }
 }

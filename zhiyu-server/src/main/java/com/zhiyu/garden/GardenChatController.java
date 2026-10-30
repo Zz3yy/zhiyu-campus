@@ -9,12 +9,14 @@ import java.util.*;
 import java.util.regex.Pattern;
 import java.security.SecureRandom;
 import org.springframework.http.HttpStatus;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 @RequestMapping("/api/garden/chat")
 public class GardenChatController {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(GardenChatController.class);
     private final GardenRepository repository;
     private final DoubaoClient client;
     private final ObjectMapper mapper;
@@ -22,6 +24,10 @@ public class GardenChatController {
     @org.springframework.beans.factory.annotation.Autowired
     public void setKnowledgeBase(KnowledgeBase knowledge) { this.knowledge = knowledge; }
     private final SecureRandom random = new SecureRandom();
+    @Value("${ai.doubao.request-timeout-ms:40000}")
+    private long requestTimeoutMillis = 40_000;
+    @Value("${ai.doubao.workflow-timeout-ms:100000}")
+    private long workflowTimeoutMillis = 100_000;
     private final Map<String, Confirmation> confirmations = new java.util.concurrent.ConcurrentHashMap<>();
     private static final Pattern RISK = Pattern.compile("自杀|自残|伤害自己|不想活|不想醒|活着没意义|撑不下去|结束生命|伤害别人|伤害他人|杀了他|杀了她|跳楼|割腕|服毒|吞药|吃了.*安眠药|正在被打|有人要杀我");
     private static final String HELP = "听到这些，我很在意你此刻的安全。你现在是否安全，身边有没有可以陪伴你的人？如果已经受伤或可能立即伤害自己或他人，请联系当地紧急服务；也请尽快联系信任的人或专业支持。";
@@ -181,12 +187,14 @@ public class GardenChatController {
         toolSession.allowed = allowed;
         if (knowledge != null) toolSession.retrievalTrace.add(new KnowledgeBase.Trace("initial", retrieval));
         String failure = "";
-        // Each provider request already has a 25-second timeout. Leave that budget before starting another.
-        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(90);
+        // Leave one configured provider-request budget before starting another model turn.
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(Math.max(1, workflowTimeoutMillis));
+        int turns = 0;
         for (int turn = 0; turn < 7; turn++) {
-            if (deadline - System.nanoTime() < java.util.concurrent.TimeUnit.SECONDS.toNanos(25)) {
+            if (deadline - System.nanoTime() < java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(Math.max(1, requestTimeoutMillis))) {
                 failure = "知识检索工作流达到本轮时间预算，改用本地引导"; break;
             }
+            turns++;
             String toolChoice = Set.of("RECOMMEND", "EXPLAIN").contains(plan.phase()) && toolSession.trace.isEmpty() ? "required" : "auto";
             var result = client.completeAgent(messages, StudyAgentTools.definitions(), toolChoice);
             if (!result.notice().isBlank()) { failure = result.notice(); break; }
@@ -234,6 +242,7 @@ public class GardenChatController {
                 issueConfirmation(owner, selected, input.entryId()), citations,
                 sources(selected == null ? List.of() : List.of(selected)), retrieval.mode() + ":" + retrieval.status()), toolSession.retrievalTrace));
         }
+        log.warn("Doubao workflow fell back: turns={}, toolCalls={}, reason={}", turns, toolSession.trace.size(), failure.isBlank() ? "incomplete" : failure);
         return ApiResponse.success(withRetrieval(localGuide(plan,
             (failure.isBlank() ? "豆包工作流未完成" : failure) + "；当前显示本地引导；本次内容可能已发送给服务商。", toolSession.trace, owner, input.entryId()), toolSession.retrievalTrace));
     }

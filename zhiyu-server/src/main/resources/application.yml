@@ -20,3 +20,7 @@ ai:
     api-key: ${ARK_API_KEY:}
     model: ${ARK_MODEL:}
     base-url: ${ARK_BASE_URL:https://ark.cn-beijing.volces.com/api/v3}
+    # Keep provider waits bounded while allowing slower tool-enabled model replies.
+    connect-timeout-ms: ${ARK_CONNECT_TIMEOUT_MS:8000}
+    request-timeout-ms: ${ARK_REQUEST_TIMEOUT_MS:40000}
+    workflow-timeout-ms: ${ARK_WORKFLOW_TIMEOUT_MS:100000}

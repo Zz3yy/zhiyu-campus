@@ -8,19 +8,38 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.springframework.beans.factory.annotation.Value;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /** Provider boundary: no request bodies, keys or provider errors are logged. */
 @Service
 public class DoubaoClient {
+    private static final Logger log = LoggerFactory.getLogger(DoubaoClient.class);
     private final ObjectMapper mapper;
     private final String key, model, baseUrl;
-    private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+    private final HttpClient http;
+    private final Duration requestTimeout;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public DoubaoClient(ObjectMapper mapper, @Value("${ai.doubao.api-key:}") String key,
             @Value("${ai.doubao.model:}") String model,
-            @Value("${ai.doubao.base-url:https://ark.cn-beijing.volces.com/api/v3}") String baseUrl) {
+            @Value("${ai.doubao.base-url:https://ark.cn-beijing.volces.com/api/v3}") String baseUrl,
+            @Value("${ai.doubao.connect-timeout-ms:8000}") long connectTimeoutMillis,
+            @Value("${ai.doubao.request-timeout-ms:40000}") long requestTimeoutMillis) {
         this.mapper=mapper; this.key=key.trim(); this.model=model.trim(); this.baseUrl=baseUrl.replaceAll("/+$","");
+        this.http = HttpClient.newBuilder().connectTimeout(Duration.ofMillis(validTimeout(connectTimeoutMillis, "connect"))).build();
+        this.requestTimeout = Duration.ofMillis(validTimeout(requestTimeoutMillis, "request"));
+    }
+
+    /** Kept for lightweight tests and callers that use the previous constructor contract. */
+    public DoubaoClient(ObjectMapper mapper, String key, String model, String baseUrl) {
+        this(mapper, key, model, baseUrl, 5_000, 25_000);
+    }
+
+    private static long validTimeout(long value, String name) {
+        if (value < 1) throw new IllegalArgumentException(name + " timeout must be positive");
+        return value;
     }
     public boolean configured() { return !key.isBlank() && !model.isBlank(); }
     public List<String> missingConfig() {
@@ -67,6 +86,7 @@ public class DoubaoClient {
      */
     public AgentResult completeAgent(List<Map<String,Object>> messages, List<Map<String,Object>> tools, String toolChoice) {
         if (!configured()) return failedAgent("后端缺少豆包配置。");
+        long started = System.nanoTime();
         try {
             Map<String,Object> payload = new LinkedHashMap<>();
             payload.put("model", model); payload.put("messages", messages); payload.put("max_tokens", 900); payload.put("stream", false);
@@ -75,18 +95,22 @@ public class DoubaoClient {
                 payload.put("tool_choice", toolChoice == null || toolChoice.isBlank() ? "auto" : toolChoice);
             }
             var request = HttpRequest.newBuilder(URI.create(baseUrl+"/chat/completions"))
-                .timeout(Duration.ofSeconds(25)).header("Authorization","Bearer "+key)
+                .timeout(requestTimeout).header("Authorization","Bearer "+key)
                 .header("Content-Type","application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(payload))).build();
             var response = http.send(request,HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode()!=200) return failedAgent(switch(response.statusCode()) {
+            long elapsedMs = elapsedMillis(started);
+            if (response.statusCode()!=200) {
+                log.warn("Doubao request failed: status={}, elapsedMs={}, toolDefinitionCount={}", response.statusCode(), elapsedMs, tools.size());
+                return failedAgent(switch(response.statusCode()) {
                 case 401 -> "方舟鉴权失败（401），请检查 API Key 是否有效。";
                 case 403 -> "方舟拒绝访问（403），请检查账号及模型调用权限。";
                 case 404 -> "方舟资源不存在（404），请核对 model 值和接口地址。";
                 case 429 -> "方舟限制了请求（429），请检查调用额度及频率。";
                 case 400 -> "方舟不接受当前请求（400），请核对模型 ID 和接口参数兼容性。";
                 default -> "方舟返回服务错误（HTTP "+response.statusCode()+").";
-            });
+                });
+            }
             if (response.body().length()>100_000) return failedAgent("豆包响应过大，未显示。");
             var root=mapper.readTree(response.body());
             String finish=root.path("choices").path(0).path("finish_reason").asText();
@@ -104,12 +128,27 @@ public class DoubaoClient {
                 calls.add(new ToolCall(id, name, arguments));
             }
             if (content.isBlank() && calls.isEmpty()) return failedAgent("豆包没有返回可处理的内容。");
+            log.info("Doubao request completed: status=200, elapsedMs={}, toolCallCount={}", elapsedMs, calls.size());
             return new AgentResult(content, List.copyOf(calls), "");
         } catch(InterruptedException error) { Thread.currentThread().interrupt(); return failedAgent("豆包请求已中断。"); }
-        catch(java.net.http.HttpTimeoutException error) { return failedAgent("豆包连接或回复超时，请稍后重试。"); }
+        catch(java.net.http.HttpConnectTimeoutException error) {
+            log.warn("Doubao connection timeout: elapsedMs={}", elapsedMillis(started));
+            return failedAgent("豆包连接方舟超时，请检查网络或稍后重试。");
+        }
+        catch(java.net.http.HttpTimeoutException error) {
+            log.warn("Doubao response timeout: elapsedMs={}", elapsedMillis(started));
+            return failedAgent("豆包回复超时，请稍后重试。");
+        }
         catch(com.fasterxml.jackson.core.JsonProcessingException error) { return failedAgent("豆包返回内容无法解析为应用需要的 JSON 格式。"); }
-        catch(java.io.IOException error) { return failedAgent("后端无法连接方舟，请检查网络和接口地址。"); }
+        catch(java.io.IOException error) {
+            log.warn("Doubao network error: type={}", error.getClass().getSimpleName());
+            return failedAgent("后端无法连接方舟，请检查网络和接口地址。");
+        }
         catch(Exception error) { return failedAgent("豆包请求处理失败，请检查后端配置与接口兼容性。"); }
+    }
+
+    private static long elapsedMillis(long started) {
+        return Duration.ofNanos(System.nanoTime() - started).toMillis();
     }
 
     public Result parseContent(String rawContent) {
