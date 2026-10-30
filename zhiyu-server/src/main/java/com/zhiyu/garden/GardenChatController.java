@@ -43,6 +43,7 @@ public class GardenChatController {
         CLARIFY 时只问一个与当前卡点有关的短问题；已说担心学不会，就追问具体内容或困难，不再问用户属于哪类。
         EXPLAIN 时用户主动询问知识：必须调用 search_knowledge_base，依据已审核结果解释原理、适用情境与边界，citationIds 不能为空，activityIds 为空，不创建练习任务。
         RECOMMEND 时回应当前困难并说明这一步为何合适；用户想换办法时直接回应并换角度，不继续推销已拒绝的建议。
+        RECOMMEND 回复的 citationIds 必须至少包含 propose_action 成功结果中所选行动返回的一个 citationId；不要猜测或从其他轮次复制 ID。
         页面另有行动卡片显示标题、时间、步骤、理由与确认按钮，reply 不抄卡片、不重复添加任务的免责声明。
         可以自然提问或解释指定行动，但不另设第二个行动、时长或计划。PAUSE 时尊重休息，不劝做任务。
         CLARIFY 或 PAUSE 阶段 activityIds 必须为空；RECOMMEND 阶段必须返回 propose_action 成功确认的唯一 activityId。
@@ -366,7 +367,10 @@ public class GardenChatController {
                 || reason.matches("(?s).*(诊断|治愈|小时|第二个任务|自动添加).*"))
             return mapper.writeValueAsString(Map.of("ok", false, "reason", "reason_failed_policy"));
         session.proposed = activity; session.proposedReason = reason;
-        return mapper.writeValueAsString(Map.of("ok", true, "activity", activity, "requiresUserConfirmation", true));
+        List<String> citationIds = session.evidence.stream().filter(citation -> citation.activityId().equals(activity.id()))
+            .map(KnowledgeBase.Citation::id).distinct().limit(3).toList();
+        return mapper.writeValueAsString(Map.of("ok", true, "activity", activity, "citationIds", citationIds,
+            "requiresUserConfirmation", true));
     }
 
     private Map<String,Object> gardenContext(GardenState garden) {

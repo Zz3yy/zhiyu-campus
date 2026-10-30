@@ -71,8 +71,16 @@ class KnowledgeBaseTest {
                         new ToolCall("k", "search_knowledge_base", "{\"query\":\"复习启动 打开资料\"}"),
                         new ToolCall("s", "search_activities", "{\"blocker\":\"START\"}"),
                         new ToolCall("p", "propose_action", "{\"activityId\":\"exam_open\",\"reason\":\"先从打开资料开始。\"}")), "");
+                    var proposal = messages.stream().filter(m -> "tool".equals(m.get("role")))
+                        .map(m -> {
+                            try { return mapper.readTree(m.get("content").toString()); }
+                            catch (Exception error) { return mapper.createObjectNode(); }
+                        }).filter(node -> node.path("requiresUserConfirmation").asBoolean()).findFirst().orElseThrow();
+                    assertTrue(proposal.path("citationIds").isArray());
+                    assertFalse(proposal.path("citationIds").isEmpty());
+                    String citationId = proposal.path("citationIds").get(0).asText();
                     return new AgentResult("{\"reply\":\"可以从这个小起点开始。\",\"needHelp\":false,\"phase\":\"RECOMMEND\",\"activityIds\":[\"exam_open\"],\"citationIds\":[\""
-                        + (forged ? "fabricated" : "activity-exam_open") + "\"]}", List.of(), "");
+                        + (forged ? "fabricated" : citationId) + "\"]}", List.of(), "");
                 }
             };
             var chat = new GardenChatController(repo, client, mapper);

@@ -27,7 +27,7 @@ final class StudyAgentTools {
                     "minutes", Map.of("type", "integer", "minimum", 1, "maximum", 3),
                     "avoidActivityIds", Map.of("type", "array", "items", Map.of("type", "string"))
                 ), "required", List.of("blocker"), "additionalProperties", false)),
-            function("propose_action", "只能在 search_activities 成功后调用，且只能提出搜索结果中的一个行动；这是无副作用的提议，不会创建任务。", Map.of(
+            function("propose_action", "只能在 search_activities 成功后调用，且只能提出搜索结果中的一个行动；这是无副作用的提议，不会创建任务。成功结果会返回该行动对应的 citationIds；RECOMMEND 回复必须从这些 ID 中引用至少一条。", Map.of(
                 "type", "object", "properties", Map.of(
                     "activityId", Map.of("type", "string"),
                     "reason", Map.of("type", "string", "maxLength", 240)
