@@ -8,9 +8,15 @@ import java.time.*;
 import java.util.*;
 import java.util.regex.Pattern;
 import java.security.SecureRandom;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.web.server.ResponseStatusException;
 
 @RestController
@@ -20,9 +26,12 @@ public class GardenChatController {
     private final GardenRepository repository;
     private final DoubaoClient client;
     private final ObjectMapper mapper;
+    private ThreadPoolTaskExecutor chatStreamExecutor;
     private KnowledgeBase knowledge;
     @org.springframework.beans.factory.annotation.Autowired
     public void setKnowledgeBase(KnowledgeBase knowledge) { this.knowledge = knowledge; }
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setChatStreamExecutor(@Qualifier("chatStreamExecutor") ThreadPoolTaskExecutor executor) { this.chatStreamExecutor = executor; }
     private final SecureRandom random = new SecureRandom();
     @Value("${ai.doubao.request-timeout-ms:40000}")
     private long requestTimeoutMillis = 40_000;
@@ -123,6 +132,63 @@ public class GardenChatController {
     @PostMapping
     public ApiResponse<Reply> chat(@RequestHeader(value="Authorization", required=false) String auth, @Valid @RequestBody Input input)
             throws com.fasterxml.jackson.core.JsonProcessingException {
+        return processChat(auth, input, ignored -> {});
+    }
+
+    @PostMapping(value="/stream", produces=MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter streamChat(@RequestHeader(value="Authorization", required=false) String auth, @Valid @RequestBody Input input) {
+        GardenState garden = own(auth);
+        if (input.entryId() != null && !input.entryId().isBlank()) findEntry(garden, input.entryId());
+        SseEmitter emitter = new SseEmitter(115_000L);
+        try {
+            chatStreamExecutor.execute(() -> {
+                try {
+                    sendStreamEvent(emitter, "status", Map.of("message", input.cloudConsent() ? "已收到，正在整理你的复习卡点。" : "已收到，正在准备本地引导。"));
+                    var response = processChat(auth, input, message -> {
+                        try { sendStreamEvent(emitter, "status", Map.of("message", message)); }
+                        catch (IOException error) { throw new UncheckedIOException(error); }
+                    });
+                    Reply reply = response.data();
+                    int[] codePoints = reply.text().codePoints().toArray();
+                    for (int offset = 0; offset < codePoints.length; offset += 16) {
+                        StringBuilder chunk = new StringBuilder();
+                        for (int index = offset; index < Math.min(offset + 16, codePoints.length); index++) chunk.appendCodePoint(codePoints[index]);
+                        sendStreamEvent(emitter, "delta", Map.of("text", chunk.toString()));
+                        if (offset + 16 < codePoints.length) Thread.sleep(24);
+                    }
+                    sendStreamEvent(emitter, "complete", reply);
+                    emitter.complete();
+                } catch (UncheckedIOException error) {
+                    emitter.complete();
+                } catch (InterruptedException error) {
+                    Thread.currentThread().interrupt();
+                    sendStreamFailure(emitter, "对话流已中断，请重试。", 503);
+                } catch (Exception error) {
+                    String message = error instanceof ResponseStatusException status && status.getReason() != null
+                        ? status.getReason() : "暂时无法完成聊天请求，请稍后重试。";
+                    int status = error instanceof ResponseStatusException responseStatus ? responseStatus.getStatusCode().value() : 500;
+                    sendStreamFailure(emitter, message, status);
+                }
+            });
+        } catch (org.springframework.core.task.TaskRejectedException error) {
+            emitter.complete();
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "聊天服务繁忙，请稍后重试。");
+        }
+        return emitter;
+    }
+
+    private void sendStreamEvent(SseEmitter emitter, String name, Object data) throws IOException {
+        emitter.send(SseEmitter.event().name(name).data(mapper.writeValueAsString(data), MediaType.APPLICATION_JSON));
+    }
+
+    private void sendStreamFailure(SseEmitter emitter, String message, int status) {
+        try { sendStreamEvent(emitter, "error", Map.of("message", message, "status", status)); }
+        catch (IOException ignored) { }
+        emitter.complete();
+    }
+
+    private ApiResponse<Reply> processChat(String auth, Input input, java.util.function.Consumer<String> progress)
+            throws com.fasterxml.jackson.core.JsonProcessingException {
         String owner = GardenController.credential(auth);
         GardenState garden = own(auth);
         if (input.entryId() != null && !input.entryId().isBlank()) findEntry(garden, input.entryId());
@@ -144,8 +210,14 @@ public class GardenChatController {
                 plan = new StudyAgentPolicy.Plan(plan.phase(), alternative.get(), "我们把起点缩小到你愿意尝试的范围。", "根据你明确提供的时间、场景与负担调整。");
             }
         }
-        if (!input.cloudConsent()) return ApiResponse.success(localGuide(plan, "当前使用本地引导；会参考近期复习行动反馈，内容未发送给豆包。", List.of(), owner, input.entryId()));
-        if (!client.configured()) return ApiResponse.success(localGuide(plan, "当前未启用外部模型，先使用本地引导；内容未发送给豆包。", List.of(), owner, input.entryId()));
+        if (!input.cloudConsent()) {
+            progress.accept("正在整理本地引导。");
+            return ApiResponse.success(localGuide(plan, "当前使用本地引导；会参考近期复习行动反馈，内容未发送给豆包。", List.of(), owner, input.entryId()));
+        }
+        if (!client.configured()) {
+            progress.accept("豆包未启用，正在整理本地引导。");
+            return ApiResponse.success(localGuide(plan, "当前未启用外部模型，先使用本地引导；内容未发送给豆包。", List.of(), owner, input.entryId()));
+        }
         // Safety screening still happens before any provider call, even though authorized data is fetched by a tool later.
         if (input.includeGardenContext() && RISK.matcher(mapper.writeValueAsString(gardenContext(garden))).find()) return ApiResponse.success(help());
 
@@ -198,6 +270,7 @@ public class GardenChatController {
                 failure = "知识检索工作流达到本轮时间预算，改用本地引导"; break;
             }
             turns++;
+            progress.accept(turn == 0 ? "正在等待豆包回应。" : "工具处理完成，正在继续整理回应。");
             String toolChoice = Set.of("RECOMMEND", "EXPLAIN").contains(plan.phase()) && toolSession.trace.isEmpty() ? "required" : "auto";
             var result = client.completeAgent(messages, StudyAgentTools.definitions(plan.phase()), toolChoice);
             if (!result.notice().isBlank()) { failure = result.notice(); break; }
@@ -216,8 +289,10 @@ public class GardenChatController {
                     messages.add(Map.of("role", "tool", "tool_call_id", call.id(),
                         "content", executeTool(call, toolSession)));
                 }
+                progress.accept("已完成本轮工具处理，正在检查下一步。");
                 continue;
             }
+            progress.accept("正在校验回复格式、行动和知识来源。");
             var parsed = client.parseContent(result.content());
             var answer = parsed.answer();
             if (answer == null) { failure = parsed.notice(); break; }

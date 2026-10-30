@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { chatStream } from './sse'
 
 test('reviewed sources are visible and local guidance is not presented as a RAG citation', async ({page}) => {
   const base=(process.env.E2E_API_BASE_URL??'http://127.0.0.1:8080')+'/api/garden'
@@ -45,13 +46,13 @@ test('RAG panel renders actual response scores, repeated searches and fallback d
   const hit={citation,vectorSimilarity:0.421,bm25:2.735,fusionScore:0.0328}
   let turn=0
   await page.route('**/api/garden/chat/status',route=>route.fulfill({json:{success:true,data:{configured:true,missingConfig:[]}}}))
-  await page.route('**/api/garden/chat',route=>route.fulfill({json:{success:true,data:{
+  await page.route('**/api/garden/chat/stream',route=>route.fulfill({status:200,contentType:'text/event-stream',body:chatStream({
     text:'仅用于界面回归的合成回复。',source:'fallback',notice:'合成测试',needHelp:false,activities:[],phase:'EXPLAIN',citations:[],activitySources:[],
     retrievalTrace:++turn===1?[
       {trigger:'initial',result:{mode:'memory-hybrid',status:'NO_MATCH',filters,hits:[]}},
       {trigger:'agent_search_1',result:{mode:'memory-hybrid',status:'MATCHED',filters,hits:[hit]}}
     ]:[{trigger:'initial',result:{mode:'memory-hybrid',status:'NO_APPROVED_CONTENT',filters,hits:[]}}]
-  }}}))
+  })}))
   try {
     await page.getByRole('navigation').getByRole('button',{name:'树屋倾诉'}).click()
     await page.getByLabel('想说的话').fill('解释一下完美主义拖延')

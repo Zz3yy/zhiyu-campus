@@ -13,7 +13,7 @@ export const hasSession = () => !!localStorage.getItem(KEY)
 export const forgetSession = () => localStorage.removeItem(KEY)
 export async function request<T>(path = '', method = 'GET', body?: unknown): Promise<T> {
   const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(), path === '/chat' ? 105000 : 15000)
+  const timeout = window.setTimeout(() => controller.abort(), path.startsWith('/chat') ? 120000 : 15000)
   try {
     const token = localStorage.getItem(KEY)
     const response = await fetch(BASE + path, { method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: body === undefined ? undefined : JSON.stringify(body), signal: controller.signal })
@@ -23,6 +23,61 @@ export async function request<T>(path = '', method = 'GET', body?: unknown): Pro
   } catch (error) {
     if (error instanceof ApiError) throw error
     throw new Error('暂时无法连接花园。请确认服务已启动，再重试；你的输入仍会保留。')
+  } finally { window.clearTimeout(timeout) }
+}
+export async function streamRequest<T>(path: string, body: unknown, onStatus: (message: string) => void, onDelta: (text: string) => void): Promise<T> {
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), 120000)
+  try {
+    const token = localStorage.getItem(KEY)
+    const response = await fetch(BASE + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify(body), signal: controller.signal,
+    })
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null)
+      throw new ApiError(response.status, payload?.message ?? '暂时无法完成请求，请稍后再试。')
+    }
+    if (!response.body) throw new Error('聊天服务没有返回流式响应。')
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''; let eventName = ''; let dataLines: string[] = []; let completed: T | undefined
+    const dispatch = () => {
+      if (!dataLines.length) { eventName = ''; return }
+      const raw = dataLines.join('\n'); dataLines = []
+      let data: any
+      try { data = JSON.parse(raw) } catch { throw new Error('聊天服务返回了无法解析的事件。') }
+      if (eventName === 'status') onStatus(String(data.message ?? '正在处理。'))
+      else if (eventName === 'delta') onDelta(String(data.text ?? ''))
+      else if (eventName === 'complete') completed = data as T
+      else if (eventName === 'error') throw new ApiError(Number(data.status ?? 0), String(data.message ?? '暂时无法完成聊天请求，请稍后再试。'))
+      eventName = ''
+    }
+    const readLine = (line: string) => {
+      if (line === '') { dispatch(); return }
+      if (line.startsWith('event:')) eventName = line.slice(6).trim()
+      else if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart())
+    }
+    while (true) {
+      const { value, done } = await reader.read()
+      buffer += decoder.decode(value, { stream: !done })
+      const lines = buffer.split(/\r?\n/)
+      buffer = lines.pop() ?? ''
+      lines.forEach(readLine)
+      if (done) break
+    }
+    if (buffer) readLine(buffer)
+    dispatch()
+    if (completed === undefined) throw new Error('聊天连接结束，但没有收到完整回复。')
+    return completed
+  } catch (error) {
+    if (error instanceof ApiError) throw error
+    if (error instanceof DOMException && error.name === 'AbortError') throw new Error('等待回应超时，请稍后重试；本次消息可能已发送。')
+    if (error instanceof Error && error.message !== '聊天服务返回了无法解析的事件。'
+      && error.message !== '聊天连接结束，但没有收到完整回复。' && error.message !== '聊天服务没有返回流式响应。')
+      throw new Error('暂时无法连接花园。请确认服务已启动，再重试；你的输入仍会保留。')
+    throw error
   } finally { window.clearTimeout(timeout) }
 }
 export async function enterGarden() {

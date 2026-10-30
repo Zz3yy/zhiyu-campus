@@ -7,8 +7,10 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -44,5 +46,17 @@ class GardenHttpTest {
             .andExpect(jsonPath("$.data.source").value("fallback"))
             .andExpect(jsonPath("$.data.activities.length()").value(1));
         mvc.perform(get("/api/garden").header("Authorization",auth)).andExpect(jsonPath("$.data.garden.tasks.length()").value(0));
+    }
+
+    @Test void chatStreamSendsProgressValidatedTextAndFinalReply() throws Exception {
+        String auth=credential();
+        MvcResult started=mvc.perform(post("/api/garden/chat/stream").header("Authorization",auth).contentType("application/json")
+            .content("{\"text\":\"复习资料很多\",\"cloudConsent\":false,\"history\":[]}"))
+            .andExpect(request().asyncStarted()).andReturn();
+        mvc.perform(asyncDispatch(started)).andExpect(status().isOk())
+            .andExpect(content().contentTypeCompatibleWith("text/event-stream"))
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("event:status")))
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("event:delta")))
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("event:complete")));
     }
 }

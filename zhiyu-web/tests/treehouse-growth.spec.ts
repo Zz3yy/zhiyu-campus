@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { chatStream } from './sse'
 
 test('treehouse recommendations grow only their linked plant and survive reload', async ({page}) => {
   await page.goto('/')
@@ -12,9 +13,9 @@ test('treehouse recommendations grow only their linked plant and survive reload'
   const initial=await read()
   const activity=initial.activities.find((a:{id:string})=>a.id==='breathe')
   await page.route('**/api/garden/chat/status',route=>route.fulfill({json:{data:{configured:true}}}))
-  await page.route('**/api/garden/chat',async route=>{
+  await page.route('**/api/garden/chat/stream',async route=>{
     expect(route.request().postDataJSON().cloudConsent).toBe(true)
-    await route.fulfill({json:{data:{text:'合成测试回复：试试一个小行动。',source:'doubao',notice:'模拟豆包回复',needHelp:false,activities:[activity]}}})
+    await route.fulfill({status:200,contentType:'text/event-stream',body:chatStream({text:'合成测试回复：试试一个小行动。',source:'doubao',notice:'模拟豆包回复',needHelp:false,activities:[activity]})})
   })
   const chat=async()=>{
     await page.getByRole('navigation').getByRole('button',{name:'树屋倾诉'}).click()

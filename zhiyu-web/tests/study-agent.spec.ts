@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
+import { chatStream } from './sse'
 
 const base=(process.env.E2E_API_BASE_URL ?? 'http://127.0.0.1:8080')+'/api/garden'
 async function enter(page: Page) {
@@ -75,9 +76,9 @@ test('cloud, garden and feedback consents are independent and revocation clears 
   const headers=await enter(page)
   const bodies:Array<Record<string,unknown>>=[]
   await page.route('**/api/garden/chat/status',route=>route.fulfill({json:{data:{configured:true}}}))
-  await page.route('**/api/garden/chat',async route=>{
+  await page.route('**/api/garden/chat/stream',async route=>{
     bodies.push(route.request().postDataJSON())
-    await route.fulfill({json:{data:{text:'合成测试回复：先了解复习卡点。',source:'doubao',notice:'模拟豆包',needHelp:false,phase:'CLARIFY',activities:[]}}})
+    await route.fulfill({status:200,contentType:'text/event-stream',body:chatStream({text:'合成测试回复：先了解复习卡点。',source:'doubao',notice:'模拟豆包',needHelp:false,phase:'CLARIFY',activities:[]})})
   })
   try {
     await openChat(page)
@@ -126,9 +127,12 @@ test('screenshot conversation changes suggestions after urgency and requests for
   const sent:Array<{history:Array<{role:string;activityId?:string}>}>=[]
   // Record real local-policy responses, not a scripted replacement.
   page.on('response',async response=>{
-    if(response.url()===base+'/chat'&&response.ok()) replies.push((await response.json()).data)
+    if(response.url()===base+'/chat/stream'&&response.ok()) {
+      const match=(await response.text()).match(/event: complete\r?\ndata: (.+)\r?\n/)
+      if(match) replies.push(JSON.parse(match[1]))
+    }
   })
-  page.on('request',request=>{if(request.url()===base+'/chat')sent.push(request.postDataJSON())})
+  page.on('request',request=>{if(request.url()===base+'/chat/stream')sent.push(request.postDataJSON())})
   try {
     const created=await page.request.post(base+'/tasks',{headers,data:{activityId:'exam_outline'}})
     const taskId=(await created.json()).data.tasks[0].id
