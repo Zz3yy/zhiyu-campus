@@ -11,6 +11,30 @@ const BASE = (import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8080') + '/
 export class ApiError extends Error { constructor(public status: number, message: string) { super(message) } }
 export const hasSession = () => !!localStorage.getItem(KEY)
 export const forgetSession = () => localStorage.removeItem(KEY)
+export async function transcribeVoice(audio: Blob, signal: AbortSignal): Promise<string> {
+  const token = localStorage.getItem(KEY)
+  const body = new FormData()
+  body.append('audio', audio, 'voice.wav')
+  body.append('consent', 'true')
+  const timeout = new AbortController()
+  const timer = window.setTimeout(() => timeout.abort(), 40000)
+  try {
+    const response = await fetch(BASE + '/speech/transcriptions', {
+      method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body,
+      signal: AbortSignal.any([signal, timeout.signal]),
+    })
+    const payload = await response.json().catch(() => null)
+    if (!response.ok) throw new ApiError(response.status, payload?.message ?? '暂时无法转写，请重试或继续打字。')
+    const text = payload?.data?.text
+    if (typeof text !== 'string' || !text.trim() || text.length > 1000) throw new Error('语音服务返回了无法使用的文字，请重新录制。')
+    return text.trim()
+  } catch (error) {
+    if (signal.aborted) throw new DOMException('已取消语音转写', 'AbortError')
+    if (timeout.signal.aborted) throw new Error('语音转写等待超时，可以重试或继续打字；录音可能已发送给服务商。')
+    if (error instanceof ApiError || error instanceof Error && error.message === '语音服务返回了无法使用的文字，请重新录制。') throw error
+    throw new Error('暂时无法连接语音服务，可以重试或继续打字。')
+  } finally { window.clearTimeout(timer) }
+}
 export async function request<T>(path = '', method = 'GET', body?: unknown): Promise<T> {
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(), path.startsWith('/chat') ? 120000 : 15000)

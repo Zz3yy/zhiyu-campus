@@ -128,7 +128,7 @@ test('screenshot conversation changes suggestions after urgency and requests for
   // Record real local-policy responses, not a scripted replacement.
   page.on('response',async response=>{
     if(response.url()===base+'/chat/stream'&&response.ok()) {
-      const match=(await response.text()).match(/event: complete\r?\ndata: (.+)\r?\n/)
+      const match=(await response.text()).match(/event: ?complete\r?\ndata: ?(.+)\r?\n/)
       if(match) replies.push(JSON.parse(match[1]))
     }
   })

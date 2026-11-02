@@ -1,4 +1,10 @@
 spring:
+  servlet:
+    multipart:
+      max-file-size: 1MB
+      max-request-size: 1100KB
+      # Keep short recordings in memory; do not spool sensitive audio to disk.
+      file-size-threshold: 1MB
   application:
     name: zhiyu-server
   datasource:
@@ -15,6 +21,12 @@ spring:
 server:
   port: ${SERVER_PORT:8080}
 ai:
+  speech:
+    api-key: ${VOLC_SPEECH_API_KEY:}
+    app-id: ${VOLC_SPEECH_APP_ID:}
+    access-token: ${VOLC_SPEECH_ACCESS_TOKEN:}
+    endpoint: ${VOLC_SPEECH_ENDPOINT:https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash}
+    request-timeout-ms: ${VOLC_SPEECH_REQUEST_TIMEOUT_MS:30000}
   service-url: ${AI_SERVICE_URL:http://localhost:8000}
   doubao:
     api-key: ${ARK_API_KEY:}
