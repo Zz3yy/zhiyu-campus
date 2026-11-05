@@ -1,10 +1,10 @@
 spring:
   servlet:
     multipart:
-      max-file-size: 1MB
-      max-request-size: 1100KB
-      # Keep short recordings in memory; do not spool sensitive audio to disk.
-      file-size-threshold: 1MB
+      max-file-size: 5MB
+      max-request-size: 6MB
+      # Keep bounded uploads in memory; do not spool images or recordings to disk.
+      file-size-threshold: 6MB
   application:
     name: zhiyu-server
   datasource:
@@ -21,6 +21,10 @@ spring:
 server:
   port: ${SERVER_PORT:8080}
 ai:
+  vision:
+    # Reuse chat's model when it supports image input; optionally select another Ark model.
+    model: ${ARK_VISION_MODEL:${ARK_MODEL:}}
+    request-timeout-ms: ${ARK_VISION_REQUEST_TIMEOUT_MS:40000}
   speech:
     api-key: ${VOLC_SPEECH_API_KEY:}
     app-id: ${VOLC_SPEECH_APP_ID:}

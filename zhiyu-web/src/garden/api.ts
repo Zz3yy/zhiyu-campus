@@ -11,6 +11,27 @@ const BASE = (import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8080') + '/
 export class ApiError extends Error { constructor(public status: number, message: string) { super(message) } }
 export const hasSession = () => !!localStorage.getItem(KEY)
 export const forgetSession = () => localStorage.removeItem(KEY)
+export async function transcribeImage(image: Blob, signal: AbortSignal): Promise<string> {
+  const token = localStorage.getItem(KEY)
+  const body = new FormData()
+  body.append('image', image, 'review-note.jpg')
+  body.append('consent', 'true')
+  const timeout = new AbortController()
+  const timer = window.setTimeout(() => timeout.abort(), 60000)
+  try {
+    const response = await fetch(BASE + '/images/drafts', { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body, signal: AbortSignal.any([signal, timeout.signal]) })
+    const payload = await response.json().catch(() => null)
+    if (!response.ok) throw new ApiError(response.status, payload?.message ?? '暂时无法识别图片，可以继续打字。')
+    const text = payload?.data?.text
+    if (typeof text !== 'string' || !text.trim() || text.length > 1000) throw new Error('图片服务返回了无法使用的文字，请换一张图片或继续打字。')
+    return text.trim()
+  } catch (error) {
+    if (signal.aborted) throw new DOMException('已取消图片识别', 'AbortError')
+    if (timeout.signal.aborted) throw new Error('图片识别等待超时，可以重试或继续打字；图片可能已发送给服务商。')
+    if (error instanceof ApiError || error instanceof Error && error.message === '图片服务返回了无法使用的文字，请换一张图片或继续打字。') throw error
+    throw new Error('暂时无法连接图片识别服务，可以继续打字。')
+  } finally { window.clearTimeout(timer) }
+}
 export async function transcribeVoice(audio: Blob, signal: AbortSignal): Promise<string> {
   const token = localStorage.getItem(KEY)
   const body = new FormData()
