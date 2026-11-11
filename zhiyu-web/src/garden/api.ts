@@ -7,7 +7,7 @@ export type Activity = { id: string; title: string; minutes: number; method: str
 export type Garden = { entries: Entry[]; tasks: Task[]; policyVersion: string; consentedAt: string }
 export type Snapshot = { garden: Garden; activities: Activity[]; storageMode: 'memory' | 'postgres' }
 const KEY = 'zhiyu.garden.token'
-const BASE = (import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8080') + '/api/garden'
+const BASE = (import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.PROD ? '' : 'http://127.0.0.1:8080')) + '/api/garden'
 export class ApiError extends Error { constructor(public status: number, message: string) { super(message) } }
 export const hasSession = () => !!localStorage.getItem(KEY)
 export const forgetSession = () => localStorage.removeItem(KEY)

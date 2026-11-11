@@ -1,0 +1,36 @@
+[Unit]
+Description=Zhiyu Campus Garden
+After=network.target postgresql.service
+Requires=postgresql.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=zhiyu
+Group=zhiyu
+WorkingDirectory=/opt/zhiyu/current
+EnvironmentFile=/etc/zhiyu/server.env
+Environment=SERVER_ADDRESS=127.0.0.1
+Environment=SERVER_PORT=8080
+Environment=SERVER_FORWARD_HEADERS_STRATEGY=framework
+Environment=SPRING_PROFILES_ACTIVE=production
+Environment=SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE=5
+Environment=SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE=1
+Environment=SERVER_TOMCAT_THREADS_MAX=40
+Environment=SERVER_TOMCAT_MAX_CONNECTIONS=100
+ExecStart=/usr/bin/java -Xms128m -Xmx768m -XX:MaxMetaspaceSize=256m -XX:+ExitOnOutOfMemoryError -jar /opt/zhiyu/current/server.jar
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+SuccessExitStatus=143
+StateDirectory=zhiyu
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+MemoryMax=1400M
+
+[Install]
+WantedBy=multi-user.target
