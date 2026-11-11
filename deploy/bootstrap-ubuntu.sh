@@ -55,7 +55,7 @@ else:
     with os.fdopen(fd, 'w') as stream:
         stream.write('POSTGRES_HOST=127.0.0.1\nPOSTGRES_DB=zhiyu\nPOSTGRES_USER=zhiyu\nPOSTGRES_PASSWORD=' + password + '\n')
         stream.write('# Fill cloud settings privately on the server, then restart zhiyu.\n')
-        stream.write('ARK_API_KEY=\nARK_MODEL=\nARK_VISION_MODEL=\nVOLC_SPEECH_API_KEY=\nVOLC_SPEECH_APP_ID=\nVOLC_SPEECH_ACCESS_TOKEN=\n')
+        stream.write('ARK_API_KEY=\nARK_MODEL=\nARK_VISION_MODEL=\n')
     print('Created private server environment; cloud providers remain unconfigured.')
 PY
 runuser -u postgres -- psql -X -v ON_ERROR_STOP=1 -d zhiyu -c 'CREATE EXTENSION IF NOT EXISTS vector;'

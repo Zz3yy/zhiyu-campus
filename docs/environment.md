@@ -30,10 +30,6 @@
 | `ARK_API_KEY` | 后端模型凭证，无默认值，由开发者私下配置 |
 | `ARK_MODEL` | 开发者账号可用的模型或推理接入点 ID，无默认值 |
 | `ARK_BASE_URL` | 默认 https://ark.cn-beijing.volces.com/api/v3 |
-| `VOLC_SPEECH_API_KEY` | 可选语音识别凭证，新版语音控制台使用；与方舟聊天配置独立，无默认值 |
-| `VOLC_SPEECH_APP_ID` / `VOLC_SPEECH_ACCESS_TOKEN` | 旧版语音控制台使用的一对配置；已配置 `VOLC_SPEECH_API_KEY` 时优先使用新版鉴权 |
-| `VOLC_SPEECH_ENDPOINT` | 默认 https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash；只允许 HTTPS，测试用本机 HTTP 除外 |
-| `VOLC_SPEECH_REQUEST_TIMEOUT_MS` | 语音请求超时，默认 30000 毫秒，允许 1–60000 |
 | `AI_SERVICE_URL` | 独立预留服务地址，默认 http://localhost:8000；树屋不依赖它 |
 | `VITE_API_BASE_URL` | 前端公开后端地址，默认 http://127.0.0.1:8080；更改后重启 Vite，生产版需重新构建 |
 
@@ -62,20 +58,6 @@ pnpm --dir zhiyu-web install --frozen-lockfile --store-dir D:/Pro/pnpm-store
 ```
 
 脚本仅修改当前终端的 PATH、JAVA_HOME 和 MAVEN_OPTS，保留 Maven 缓存 `D:/Pro/m2`。pnpm 缓存用命令行参数显式选择。其他机器直接使用 PATH 上的工具即可。已有依赖若报告 store 不一致，先使用原来的 `--store-dir`；需要改缓存时在停止开发服务后重新安装依赖。
-
-## 可选：树屋语音转写
-
-需要在火山引擎语音控制台另行开通资源 `volc.bigasr.auc_turbo`（录音文件极速版识别）。已有方舟 Chat Completions 配置不能证明语音服务已开通。接口与格式依据：[火山引擎官方说明](https://www.volcengine.com/docs/6561/1631584)。
-
-新版语音控制台在后端进程环境配置 `VOLC_SPEECH_API_KEY`；旧版使用 `VOLC_SPEECH_APP_ID` 与 `VOLC_SPEECH_ACCESS_TOKEN`。不要把值写入前端、Git 仓库或聊天，也不要打印环境变量。Spring 不自动加载 `.env.example`；配置变更后重启后端。页面状态只表示必需字段齐全，服务是否开通、权限和额度是否有效，需要真实转写另行验证。
-
-浏览器需支持 `getUserMedia`、Web Audio 和 AudioWorklet，并从 HTTPS 或本机 `localhost` / `127.0.0.1` 打开。手机直接访问电脑的普通 HTTP 局域网 IP 通常不能使用麦克风，应使用 HTTPS。浏览器端录制并编码为 16 kHz、单声道、16 位 PCM WAV，上限 30 秒；不依赖浏览器私有语音识别接口，不需要 FFmpeg。
-
-语音授权独立于豆包聊天授权。用户同意后按住说话（松开转写），也可点击开始、停止；转写结果可编辑，再放入输入框并点击发送。已有草稿不会被覆盖。未启用豆包时，发送的文字进入本地引导；启用豆包时进入原有 SSE / Agent 流程。创建任务仍需用户确认。
-
-音频经 Spring Boot 转发到语音服务商，应用不写入数据库或文件；短录音 multipart 保存在内存。后端校验 WAV 头、真实数据长度、最长 30 秒及文件大小，最多同时处理两个转写请求；供应商响应有超时和大小上限。语音请求只含录音和通用调用标识，不含花园资料、对话历史或匿名花园凭证。不启用情绪、性别或说话人识别。取消、撤销语音授权或离开树屋会释放麦克风并停止等待；不能撤回服务商已经收到的音频，服务商留存以实际条款为准。
-
-尚未配置、麦克风权限拒绝、无声或转写失败时保留文字入口。自动测试中的合成麦克风与模拟语音供应商不代表真实识别质量。真实验收时应亲口说出考试压力或复习卡点，核对转写，再确认发送并检查原有任务确认流程。
 
 ## 可选：FastAPI 服务
 

@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { ArrowLeft, ArrowRight, BookOpen, Check, ChevronRight, CircleHelp, Flower2, Home, Leaf, LoaderCircle, MessageCircle, Plus, ShieldCheck, Sprout, Trash2, Wind, X } from 'lucide-react'
-import { Activity, ApiError, Entry, Garden, Reflection, Snapshot, Thought, dateInZone, enterGarden, forgetSession, hasSession, longestStreak, needsHelp, request, stage, streak, timezone, weekStart } from './api'
+import { Activity, ApiError, Entry, Garden, Reflection, Snapshot, Thought, dateInZone, enterGarden, forgetSession, hasSession, longestStreak, needsHelp, newRequestId, request, stage, streak, timezone, weekStart } from './api'
 import { Keeper, Landscape, Plant, plantInfo, plants } from './Art'
 import './garden.css'
 import { Treehouse } from './Treehouse'
@@ -90,14 +90,14 @@ export function GardenApp() {
     {selectedEntry && !planted && <EntryDialog key={selectedEntry.id} entry={selectedEntry} garden={garden} activities={snapshot.activities} busy={busy} onClose={()=>setSelected(null)} onThought={value=>mutate(`/entries/${selectedEntry.id}/thought`,'PUT',value)} onReflect={value=>mutate(`/entries/${selectedEntry.id}/reflection`,'POST',value)} onAdd={activity=>addActivity(selectedEntry,activity)} onBreathe={()=>setBreathing(true)} onHelp={()=>setHelp(true)} onDelete={async()=>{const value=await mutate(`/entries/${selectedEntry.id}`,'DELETE'); if(value)setSelected(null)}}/>}
     {help && <Help onClose={()=>setHelp(false)}/>}
     {breathing && <Breathing onClose={()=>setBreathing(false)}/>}
-    {settings && <Dialog title="隐私与我的数据" onClose={()=>setSettings(false)}><p>这个花园由当前浏览器中的匿名凭证访问。花园内容保存在{snapshot.storageMode==='memory'?'服务器内存中，服务重启会清空':'本应用数据库中'}；请保管好当前设备。</p><p>树屋聊天正文不写入本应用数据库，离开页面清空页面记录。启用豆包后消息会发送给火山引擎方舟，服务商留存以实际条款为准；删除花园不能撤回已发送的数据。语音录音经单独授权发送给火山引擎语音识别，本应用不持久保存音频；取消转写不能撤回服务商已接收的录音。旧版记录未自动转换为植物。</p><p>删除全部数据会永久删除当前花园的植物、日记、任务和访问凭证，无法撤销。</p><DeleteGarden busy={busy} onDelete={async()=>{ if(lock.current)return; lock.current=true;setBusy(true);try{await request('','DELETE');forgetSession();setSnapshot(null);setSettings(false);setAccepted(false)}catch(e){setError((e as Error).message)}finally{lock.current=false;setBusy(false)} }}/></Dialog>}
+    {settings && <Dialog title="隐私与我的数据" onClose={()=>setSettings(false)}><p>这个花园由当前浏览器中的匿名凭证访问。花园内容保存在{snapshot.storageMode==='memory'?'服务器内存中，服务重启会清空':'本应用数据库中'}；请保管好当前设备。</p><p>树屋聊天正文不写入本应用数据库，离开页面清空页面记录。启用豆包后消息会发送给火山引擎方舟，服务商留存以实际条款为准；删除花园不能撤回已发送的数据。旧版记录未自动转换为植物。</p><p>删除全部数据会永久删除当前花园的植物、日记、任务和访问凭证，无法撤销。</p><DeleteGarden busy={busy} onDelete={async()=>{ if(lock.current)return; lock.current=true;setBusy(true);try{await request('','DELETE');forgetSession();setSnapshot(null);setSettings(false);setAccepted(false)}catch(e){setError((e as Error).message)}finally{lock.current=false;setBusy(false)} }}/></Dialog>}
   </div></ErrorContext.Provider>
 }
 
 function SeedForm({busy,onSeed,onBack,onHelp}:{busy:boolean;onSeed:(body:{requestId:string;plant:string;intensity:number;note:string;timezone:string})=>Promise<void>;onBack:()=>void;onHelp:()=>void}) {
   const [kind,setKind]=useState<Entry['plant'] | null>(null)
   const [note,setNote]=useState(''); const [intensity,setIntensity]=useState(3)
-  const [requestId] = useState(()=>crypto.randomUUID())
+  const [requestId] = useState(newRequestId)
   return <section className="seed-page"><div className="seed-intro"><div><span className="overline">觉察，是生长的开始</span><h2>此刻的心情，像哪一株植物？</h2><p>没有好坏之分。选择最接近的一种，稍后也可以再种一株。</p></div><Keeper pose="listen"/></div><div className="plant-picker" role="group" aria-label="选择情绪植物">{plants.map(plant=><button key={plant.kind} aria-pressed={kind===plant.kind} className={kind===plant.kind?'chosen':''} onClick={()=>setKind(plant.kind)}><Plant kind={plant.kind}/><span className="plant-name">{plant.name}<small>{plant.emotion}</small></span><p>{plant.description}</p>{kind===plant.kind && <span className="chosen-check"><Check size={15}/></span>}</button>)}</div>{kind && <form className="seed-form" onSubmit={e=>{e.preventDefault();if(needsHelp(note))onHelp();void onSeed({requestId,plant:kind,intensity,note,timezone:timezone()})}}><label htmlFor="seed-note">发生了什么，让你有这样的感受？<small>可以不写 · 最多 1000 字</small></label><textarea id="seed-note" value={note} onChange={e=>setNote(e.target.value)} maxLength={1000} placeholder="例如：明天要上台汇报，担心自己讲不好。"/><Intensity value={intensity} onChange={setIntensity}/><div className="form-actions"><button type="button" className="g-text" onClick={onBack}>先回花园</button><button className="g-button" disabled={busy}>{busy?<LoaderCircle className="spin" size={17}/>:<Sprout size={18}/>}种下{plantInfo(kind).name}</button></div></form>}</section>
 }
 

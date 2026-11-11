@@ -31,13 +31,6 @@
 .rag-trace section { margin-top: 12px; padding-top: 10px; border-top: 1px solid #cbd7cc; }
 .rag-trace article { margin: 10px 0; padding: 10px; border-radius: 10px; background: #f1f6f0; overflow-wrap: anywhere; }
 .rag-id { display: block; overflow-wrap: anywhere; }
-.voice-input{margin:8px 25px 12px;padding:14px 16px;border:1px solid #8b9d83;border-radius:18px;background:#e8dcc7;color:var(--ink)}
-.voice-intro{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600}.voice-intro small{margin-left:auto;font-size:10px;font-weight:400;white-space:nowrap}
-.voice-input .voice-consent{margin:10px 0;font-size:11px;line-height:1.7;align-items:flex-start}.voice-consent input{margin-top:4px;flex-shrink:0}
-.voice-controls{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px}.voice-hold{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:11px 18px;border:1px solid #606c38;border-radius:16px;background:#8b9d83;color:#172c20;font-size:12px;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
-.voice-hold.recording{background:#606c38;color:#fff;border-color:#606c38}.voice-input .voice-note{font-size:10px;line-height:1.7;margin:9px 0 0;color:#43563b;overflow-wrap:anywhere}.voice-input .error-text{font-size:11px;margin:10px 0 0}
-.voice-review{margin-top:13px;padding-top:12px;border-top:1px solid #8b9d83}.voice-review label{display:block;font-size:12px;margin-bottom:7px}.voice-review textarea{display:block;resize:vertical;width:100%;min-height:80px;max-height:220px;border:1px solid #8b9d83;border-radius:16px;padding:12px;background:#e8dcc7;color:var(--ink);font:inherit;font-size:12px;line-height:1.8}.voice-review>div{display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin-top:9px}.voice-review .g-button{font-size:11px}
-@media(max-width:520px){.voice-input{margin:8px 10px 10px;padding:12px}.voice-intro{flex-wrap:wrap}.voice-controls{gap:6px 12px}.voice-input .g-text{font-size:11px}.voice-review .g-button{padding:10px 12px}}
 .tree-message .rag-trace p { background: transparent; border: 0; border-radius: 0; padding: 0; margin: 6px 0; font-size: 12px; }
 .image-input{margin:8px 25px 12px;padding:14px 16px;border:1px solid #8b9d83;border-radius:18px;background:#e8dcc7;color:var(--ink)}
 .image-intro{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600}.image-intro small{margin-left:auto;font-size:10px;font-weight:400}

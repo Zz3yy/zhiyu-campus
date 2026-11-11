@@ -56,7 +56,7 @@ try:
             time.sleep(1)
         assert any(e['id'] == entry_id for e in api()['garden']['entries']), 'Record lost on restart'
         print('PASS record and session survive application restart')
-    for path in ['/chat/status', '/images/status', '/speech/status']:
+    for path in ['/chat/status', '/images/status']:
         status = api(path)
         print(path + ': configured=' + str(status.get('configured', False)))
 finally:

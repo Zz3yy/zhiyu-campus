@@ -37,4 +37,4 @@ if [[ "$ready" != true ]]; then
 fi
 systemctl reload-or-restart nginx
 systemctl start zhiyu-backup.timer
-echo "Activated $release (private HTTP at 127.0.0.1:8088)."
+echo "Activated $release (public HTTP on port 80; local check at 127.0.0.1:8088)."

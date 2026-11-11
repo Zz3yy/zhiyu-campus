@@ -9,6 +9,14 @@ export type Snapshot = { garden: Garden; activities: Activity[]; storageMode: 'm
 const KEY = 'zhiyu.garden.token'
 const BASE = (import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.PROD ? '' : 'http://127.0.0.1:8080')) + '/api/garden'
 export class ApiError extends Error { constructor(public status: number, message: string) { super(message) } }
+// getRandomValues remains available on HTTP; randomUUID requires a secure context.
+export function newRequestId(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80
+  const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`
+}
 export const hasSession = () => !!localStorage.getItem(KEY)
 export const forgetSession = () => localStorage.removeItem(KEY)
 export async function transcribeImage(image: Blob, signal: AbortSignal): Promise<string> {
@@ -30,30 +38,6 @@ export async function transcribeImage(image: Blob, signal: AbortSignal): Promise
     if (timeout.signal.aborted) throw new Error('图片识别等待超时，可以重试或继续打字；图片可能已发送给服务商。')
     if (error instanceof ApiError || error instanceof Error && error.message === '图片服务返回了无法使用的文字，请换一张图片或继续打字。') throw error
     throw new Error('暂时无法连接图片识别服务，可以继续打字。')
-  } finally { window.clearTimeout(timer) }
-}
-export async function transcribeVoice(audio: Blob, signal: AbortSignal): Promise<string> {
-  const token = localStorage.getItem(KEY)
-  const body = new FormData()
-  body.append('audio', audio, 'voice.wav')
-  body.append('consent', 'true')
-  const timeout = new AbortController()
-  const timer = window.setTimeout(() => timeout.abort(), 40000)
-  try {
-    const response = await fetch(BASE + '/speech/transcriptions', {
-      method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body,
-      signal: AbortSignal.any([signal, timeout.signal]),
-    })
-    const payload = await response.json().catch(() => null)
-    if (!response.ok) throw new ApiError(response.status, payload?.message ?? '暂时无法转写，请重试或继续打字。')
-    const text = payload?.data?.text
-    if (typeof text !== 'string' || !text.trim() || text.length > 1000) throw new Error('语音服务返回了无法使用的文字，请重新录制。')
-    return text.trim()
-  } catch (error) {
-    if (signal.aborted) throw new DOMException('已取消语音转写', 'AbortError')
-    if (timeout.signal.aborted) throw new Error('语音转写等待超时，可以重试或继续打字；录音可能已发送给服务商。')
-    if (error instanceof ApiError || error instanceof Error && error.message === '语音服务返回了无法使用的文字，请重新录制。') throw error
-    throw new Error('暂时无法连接语音服务，可以重试或继续打字。')
   } finally { window.clearTimeout(timer) }
 }
 export async function request<T>(path = '', method = 'GET', body?: unknown): Promise<T> {

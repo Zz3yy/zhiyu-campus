@@ -2,6 +2,8 @@ import { test, expect } from '@playwright/test'
 
 test('real garden: consent, seed, diary, task, reload and report', async ({page}) => {
   const errors: string[] = []; page.on('pageerror', error=>errors.push(error.message))
+  // Exercise plain-HTTP support where crypto.randomUUID is unavailable.
+  await page.addInitScript(() => Object.defineProperty(crypto, 'randomUUID', { value: undefined, configurable: true }))
   await page.setViewportSize({width:1440,height:1000})
   await page.goto('/')
   await expect(page.getByRole('button',{name:'进入我的花园'})).toBeDisabled()
@@ -40,6 +42,7 @@ test('real garden: consent, seed, diary, task, reload and report', async ({page}
   await expect(page.locator('.intensity-chart .chart-value')).toHaveText('4.0')
   await page.screenshot({path:'test-results/garden-report.png',fullPage:true})
   await page.getByRole('navigation').getByRole('button',{name:'树屋倾诉'}).click()
+  await expect(page.getByRole('button',{name:'按住说话'})).toHaveCount(0)
   await page.getByRole('button',{name:'考前有点慌'}).click()
   await expect(page.locator('.tree-message')).toHaveCount(2)
   await page.getByRole('navigation').getByRole('button',{name:'我的花园'}).click()
