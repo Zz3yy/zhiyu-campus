@@ -3,8 +3,8 @@ import { ArrowRight, Leaf, ShieldCheck, Wind } from 'lucide-react'
 import { Activity, Garden, request, streamRequest } from './api'
 import { Keeper, plantInfo } from './Art'
 import { ImageInput } from './ImageInput'
-// Keep the unverified provider-backed image flow out of production builds by default.
-const IMAGE_INPUT_ENABLED = import.meta.env.DEV || import.meta.env.VITE_ENABLE_IMAGE_INPUT === 'true'
+// Keep the unverified provider-backed image flow hidden until explicitly enabled.
+const IMAGE_INPUT_ENABLED = import.meta.env.VITE_ENABLE_IMAGE_INPUT === 'true'
 type Phase = 'CLARIFY' | 'RECOMMEND' | 'PAUSE' | 'SAFETY' | 'EXPLAIN'
 type RetrievalTrace = { trigger:string; result:{ mode:string; status:string; filters:{timeLimit:number|null;emotion:string|null;scene:string|null;cognitiveLoad:string|null}; hits:{citation:Citation;vectorSimilarity:number;bm25:number;fusionScore:number}[] } }
 function KnowledgeTrace({trace}:{trace:RetrievalTrace[]}) {
